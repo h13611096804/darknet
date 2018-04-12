@@ -78,7 +78,6 @@ struct layer{
     int out_h, out_w, out_c;
     int n;
     int max_boxes;
-	int small_object;
     int groups;
     int size;
     int side;
@@ -135,6 +134,7 @@ struct layer{
     float coord_scale;
     float object_scale;
     float noobject_scale;
+	float mask_scale;
     float class_scale;
     int bias_match;
     int random;

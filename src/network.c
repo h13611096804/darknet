@@ -374,10 +374,14 @@ int resize_network(network *net, int w, int h)
             resize_maxpool_layer(&l, w, h);
         }else if(l.type == REGION){
             resize_region_layer(&l, w, h);
+		}else if (l.type == YOLO) {
+			resize_yolo_layer(&l, w, h);
         }else if(l.type == ROUTE){
             resize_route_layer(&l, net);
 		}else if (l.type == SHORTCUT) {
 			resize_shortcut_layer(&l, w, h);
+		}else if (l.type == UPSAMPLE) {
+			resize_upsample_layer(&l, w, h);
         }else if(l.type == REORG){
             resize_reorg_layer(&l, w, h);
         }else if(l.type == AVGPOOL){
@@ -544,11 +548,16 @@ void custom_get_region_detections(layer l, int w, int h, int net_w, int net_h, f
 		dets[j].classes = l.classes;
 		dets[j].bbox = boxes[j];
 		dets[j].objectness = 1;
-		for (i = 0; i < l.classes; ++i) dets[j].prob[i] = probs[j][i];
+		for (i = 0; i < l.classes; ++i) {
+			dets[j].prob[i] = probs[j][i];
+		}
 	}
 
 	free(boxes);
 	free_ptrs((void **)probs, l.w*l.h*l.n);
+
+	//correct_region_boxes(dets, l.w*l.h*l.n, w, h, net_w, net_h, relative);
+	correct_yolo_boxes(dets, l.w*l.h*l.n, w, h, net_w, net_h, relative, letter);
 }
 
 void fill_network_boxes(network *net, int w, int h, float thresh, float hier, int *map, int relative, detection *dets, int letter)
@@ -741,4 +750,43 @@ void free_network(network net)
 #else
 	free(net.workspace);
 #endif
+}
+
+
+void fuse_conv_batchnorm(network net)
+{
+	int j;
+	for (j = 0; j < net.n; ++j) {
+		layer *l = &net.layers[j];
+
+		if (l->type == CONVOLUTIONAL) {
+			//printf(" Merges Convolutional-%d and batch_norm \n", j);
+
+			if (l->batch_normalize) {
+				int f;
+				for (f = 0; f < l->n; ++f)
+				{
+					l->biases[f] = l->biases[f] - l->scales[f] * l->rolling_mean[f] / (sqrtf(l->rolling_variance[f]) + .000001f);
+
+					const size_t filter_size = l->size*l->size*l->c;
+					int i;
+					for (i = 0; i < filter_size; ++i) {
+						int w_index = f*filter_size + i;
+
+						l->weights[w_index] = l->weights[w_index] * l->scales[f] / (sqrtf(l->rolling_variance[f]) + .000001f);
+					}
+				}
+
+				l->batch_normalize = 0;
+#ifdef GPU
+				if (gpu_index >= 0) {
+					push_convolutional_layer(*l);
+				}
+#endif
+			}
+		}
+		else {
+			//printf(" Fusion skip layer type: %d \n", l->type);
+		}
+	}
 }

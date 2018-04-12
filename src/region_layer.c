@@ -493,7 +493,7 @@ void correct_region_boxes(detection *dets, int n, int w, int h, int netw, int ne
 	}
 }
 
-/*
+
 void get_region_detections(layer l, int w, int h, int netw, int neth, float thresh, int *map, float tree_thresh, int relative, detection *dets)
 {
 	int i, j, n, z;
@@ -533,7 +533,7 @@ void get_region_detections(layer l, int w, int h, int netw, int neth, float thre
 			int box_index = entry_index(l, 0, n*l.w*l.h + i, 0);
 			int mask_index = entry_index(l, 0, n*l.w*l.h + i, 4);
 			float scale = l.background ? 1 : predictions[obj_index];
-			dets[index].bbox = get_region_box(predictions, l.biases, n, box_index, col, row, l.w, l.h, l.w*l.h);
+			dets[index].bbox = get_region_box(predictions, l.biases, n, box_index, col, row, l.w, l.h);// , l.w*l.h);
 			dets[index].objectness = scale > thresh ? scale : 0;
 			if (dets[index].mask) {
 				for (j = 0; j < l.coords - 4; ++j) {
@@ -544,7 +544,7 @@ void get_region_detections(layer l, int w, int h, int netw, int neth, float thre
 			int class_index = entry_index(l, 0, n*l.w*l.h + i, l.coords + !l.background);
 			if (l.softmax_tree) {
 
-				hierarchy_predictions(predictions + class_index, l.classes, l.softmax_tree, 0, l.w*l.h);
+				hierarchy_predictions(predictions + class_index, l.classes, l.softmax_tree, 0);// , l.w*l.h);
 				if (map) {
 					for (j = 0; j < 200; ++j) {
 						int class_index = entry_index(l, 0, n*l.w*l.h + i, l.coords + 1 + map[j]);
@@ -570,4 +570,3 @@ void get_region_detections(layer l, int w, int h, int netw, int neth, float thre
 	}
 	correct_region_boxes(dets, l.w*l.h*l.n, w, h, netw, neth, relative);
 }
-*/

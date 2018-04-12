@@ -24,6 +24,7 @@
 #ifndef CV_VERSION_EPOCH
 #include "opencv2/videoio/videoio_c.h"
 #endif
+#include "http_stream.h"
 image get_image_from_stream(CvCapture *cap);
 
 static char **demo_names;
@@ -148,7 +149,7 @@ void demo(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
         load_weights(&net, weightfile);
     }
     set_batch_network(&net, 1);
-
+	fuse_conv_batchnorm(net);
     srand(2222222);
 
     if(filename){

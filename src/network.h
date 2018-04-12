@@ -57,6 +57,7 @@ typedef struct network{
     float exposure;
     float saturation;
     float hue;
+	int small_object;
 
     int gpu_index;
     tree *hierarchy;
@@ -133,9 +134,11 @@ void set_batch_network(network *net, int b);
 int get_network_input_size(network net);
 float get_network_cost(network net);
 detection *get_network_boxes(network *net, int w, int h, float thresh, float hier, int *map, int relative, int *num, int letter);
+void free_detections(detection *dets, int n);
 
 int get_network_nuisance(network net);
 int get_network_background(network net);
+void fuse_conv_batchnorm(network net);
 
 #ifdef __cplusplus
 }
