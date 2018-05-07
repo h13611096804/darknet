@@ -1,5 +1,5 @@
 
-darknet.exe detector demo data/coco.data yolov3.cfg yolov3.weights -i 0 -thresh 0.25 test.mp4
+darknet.exe detector demo data/coco.data yolov3.cfg D:\yolo\weights\yolov3.weights D:\yolo\data\1-27600-28200.mp4
 
 
 pause
