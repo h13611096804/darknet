@@ -13,6 +13,7 @@
 #ifdef OPENCV
 #include "opencv2/highgui/highgui_c.h"
 #include "opencv2/imgproc/imgproc_c.h"
+#include "opencv2/core/types_c.h"
 #include "opencv2/core/version.hpp"
 #ifndef CV_VERSION_EPOCH
 #include "opencv2/videoio/videoio_c.h"
@@ -35,6 +36,35 @@ float get_color(int c, int x, int max)
     float r = (1-ratio) * colors[i][c] + ratio*colors[j][c];
     //printf("%f\n", r);
     return r;
+}
+
+static float get_pixel(image m, int x, int y, int c)
+{
+	assert(x < m.w && y < m.h && c < m.c);
+	return m.data[c*m.h*m.w + y*m.w + x];
+}
+static float get_pixel_extend(image m, int x, int y, int c)
+{
+	if (x < 0 || x >= m.w || y < 0 || y >= m.h) return 0;
+	/*
+	if(x < 0) x = 0;
+	if(x >= m.w) x = m.w-1;
+	if(y < 0) y = 0;
+	if(y >= m.h) y = m.h-1;
+	*/
+	if (c < 0 || c >= m.c) return 0;
+	return get_pixel(m, x, y, c);
+}
+static void set_pixel(image m, int x, int y, int c, float val)
+{
+	if (x < 0 || y < 0 || c < 0 || x >= m.w || y >= m.h || c >= m.c) return;
+	assert(x < m.w && y < m.h && c < m.c);
+	m.data[c*m.h*m.w + y*m.w + x] = val;
+}
+static void add_pixel(image m, int x, int y, int c, float val)
+{
+	assert(x < m.w && y < m.h && c < m.c);
+	m.data[c*m.h*m.w + y*m.w + x] += val;
 }
 
 void composite_image(image source, image dest, int dx, int dy)
@@ -222,6 +252,8 @@ void draw_detections_v3(image im, detection *dets, int num, float thresh, char *
 		}
 		if (class_id >= 0) {
 			int width = im.h * .006;
+			if (width < 1)
+				width = 1;
 
 			/*
 			if(0){
@@ -254,6 +286,12 @@ void draw_detections_v3(image im, detection *dets, int num, float thresh, char *
 			if (right > im.w - 1) right = im.w - 1;
 			if (top < 0) top = 0;
 			if (bot > im.h - 1) bot = im.h - 1;
+
+			//int b_x_center = (left + right) / 2;
+			//int b_y_center = (top + bot) / 2;
+			//int b_width = right - left;
+			//int b_height = bot - top;
+			//sprintf(labelstr, "%d x %d - w: %d, h: %d", b_x_center, b_y_center, b_width, b_height);
 
 			draw_box_width(im, left, top, right, bot, width, red, green, blue);
 			if (alphabet) {
@@ -393,6 +431,12 @@ void draw_detections_cv_v3(IplImage* show_img, detection *dets, int num, float t
 			if (top < 0) top = 0;
 			if (bot > show_img->height - 1) bot = show_img->height - 1;
 
+			//int b_x_center = (left + right) / 2;
+			//int b_y_center = (top + bot) / 2;
+			//int b_width = right - left;
+			//int b_height = bot - top;
+			//sprintf(labelstr, "%d x %d - w: %d, h: %d", b_x_center, b_y_center, b_width, b_height);
+
 			float const font_size = show_img->height / 1000.F;
 			CvPoint pt1, pt2, pt_text, pt_text_bg1, pt_text_bg2;
 			pt1.x = left;
@@ -418,7 +462,7 @@ void draw_detections_cv_v3(IplImage* show_img, detection *dets, int num, float t
 			black_color.val[0] = 0;
 			CvFont font;
 			cvInitFont(&font, CV_FONT_HERSHEY_SIMPLEX, font_size, font_size, 0, font_size * 3, 8);
-			cvPutText(show_img, names[class_id], pt_text, &font, black_color);
+			cvPutText(show_img, labelstr, pt_text, &font, black_color);
 		}
 	}
 }
@@ -560,7 +604,7 @@ void draw_train_loss(IplImage* img, int img_size, float avg_loss, float max_img_
 	cvPutText(img, char_buff, pt1, &font, CV_RGB(0, 0, 0));
 	cvShowImage("average loss", img);
 	int k = cvWaitKey(20);
-	if (k == 's') cvSaveImage("chart.jpg", img, 0);
+	if (k == 's' || current_batch == (max_batches-1)) cvSaveImage("chart.jpg", img, 0);
 }
 #endif	// OPENCV
 
@@ -861,19 +905,31 @@ image get_image_from_stream(CvCapture *cap)
     return im;
 }
 
-image get_image_from_stream_resize(CvCapture *cap, int w, int h, IplImage** in_img, int use_webcam)
+image get_image_from_stream_resize(CvCapture *cap, int w, int h, IplImage** in_img, int cpp_video_capture)
 {
 	IplImage* src;
-	if (use_webcam) src = get_webcam_frame(cap);
+	if (cpp_video_capture) {
+		static int once = 1;
+		if (once) {
+			once = 0;
+			do {
+				src = get_webcam_frame(cap);
+				if (!src) return make_empty_image(0, 0, 0);
+			} while (src->width < 1 || src->height < 1 || src->nChannels < 1);
+		} else
+			src = get_webcam_frame(cap);
+	}
 	else src = cvQueryFrame(cap);
 
 	if (!src) return make_empty_image(0, 0, 0);
+	if (src->width < 1 || src->height < 1 || src->nChannels < 1) return make_empty_image(0, 0, 0);
 	IplImage* new_img = cvCreateImage(cvSize(w, h), IPL_DEPTH_8U, 3);
 	*in_img = cvCreateImage(cvSize(src->width, src->height), IPL_DEPTH_8U, 3);
 	cvResize(src, *in_img, CV_INTER_LINEAR);
 	cvResize(src, new_img, CV_INTER_LINEAR);
 	image im = ipl_to_image(new_img);
 	cvReleaseImage(&new_img);
+	if (cpp_video_capture) cvReleaseImage(&src);
 	rgbgr_image(im);
 	return im;
 }
@@ -1627,32 +1683,6 @@ image get_image_layer(image m, int l)
         out.data[i] = m.data[i+l*m.h*m.w];
     }
     return out;
-}
-
-float get_pixel(image m, int x, int y, int c)
-{
-    assert(x < m.w && y < m.h && c < m.c);
-    return m.data[c*m.h*m.w + y*m.w + x];
-}
-float get_pixel_extend(image m, int x, int y, int c)
-{
-    if(x < 0) x = 0;
-    if(x >= m.w) x = m.w-1;
-    if(y < 0) y = 0;
-    if(y >= m.h) y = m.h-1;
-    if(c < 0 || c >= m.c) return 0;
-    return get_pixel(m, x, y, c);
-}
-void set_pixel(image m, int x, int y, int c, float val)
-{
-    if (x < 0 || y < 0 || c < 0 || x >= m.w || y >= m.h || c >= m.c) return;
-    assert(x < m.w && y < m.h && c < m.c);
-    m.data[c*m.h*m.w + y*m.w + x] = val;
-}
-void add_pixel(image m, int x, int y, int c, float val)
-{
-    assert(x < m.w && y < m.h && c < m.c);
-    m.data[c*m.h*m.w + y*m.w + x] += val;
 }
 
 void print_image(image m)

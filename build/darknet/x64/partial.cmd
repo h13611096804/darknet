@@ -15,6 +15,12 @@ darknet.exe partial cfg/yolov2-tiny.cfg yolov2-tiny.weights yolov2-tiny.conv.13 
 darknet.exe partial cfg/yolo-voc.cfg yolo-voc.weights yolo-voc.conv.23 23
 
 
+darknet.exe partial cfg/yolov2.cfg yolov2.weights yolov2.conv.23 23
+
+
+darknet.exe partial cfg/yolov3.cfg yolov3.weights yolov3.conv.105 105
+
+
 darknet.exe partial cfg/yolo9000.cfg yolo9000.weights yolo9000.conv.22 22
 
 
