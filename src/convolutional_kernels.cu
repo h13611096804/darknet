@@ -371,7 +371,7 @@ void backward_convolutional_layer_gpu(convolutional_layer l, network_state state
 	cuda_convert_f16_to_f32(l.weight_updates_gpu16, l.c*l.n*l.size*l.size, l.weight_updates_gpu);
 
 	if (state.delta) {
-		if ((l.binary || l.xnor)&&32<=l.c) swap_binary(&l);
+		if ((l.binary || l.xnor) && 32 <= l.c) swap_binary(&l);
 
 		// http://docs.nvidia.com/deeplearning/sdk/cudnn-developer-guide/index.html#cudnnConvolutionBackwardData
 		// calculate delta for the next layer
@@ -414,7 +414,7 @@ void backward_convolutional_layer_gpu(convolutional_layer l, network_state state
             l.dweightDesc,
             l.weight_updates_gpu);
 
-    if(state.delta){
+    if (state.delta) {
 		if ((l.binary || l.xnor) && 32 <= l.c)  swap_binary(&l);
 		// http://docs.nvidia.com/deeplearning/sdk/cudnn-developer-guide/index.html#cudnnConvolutionBackwardData
 		// calculate delta for the next layer
