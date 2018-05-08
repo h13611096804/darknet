@@ -4,11 +4,16 @@
 #include "activations.h"
 #include "stddef.h"
 #include "tree.h"
+#include <stdint.h>
 
 struct network_state;
 
 struct layer;
 typedef struct layer layer;
+//hanxu
+typedef uint32_t BINARY_WORD;
+#define BITS_PER_BINARY_WORD (sizeof(BINARY_WORD) * CHAR_BIT)
+
 
 typedef enum {
     CONVOLUTIONAL,
@@ -88,6 +93,7 @@ struct layer{
     int flip;
     int index;
     int binary;
+	int depthwise;
     int xnor;
     int steps;
     int hidden;
@@ -166,6 +172,12 @@ struct layer{
 
     float *concat;
     float *concat_delta;
+
+	//hanxu
+	BINARY_WORD *binary_input_xnor;
+	BINARY_WORD *binary_weights_xnor;
+	float *alpha_xnor;
+
 
     float *binary_weights;
 
@@ -282,7 +294,7 @@ struct layer{
     cudnnTensorDescriptor_t srcTensorDesc, dstTensorDesc;
     cudnnTensorDescriptor_t dsrcTensorDesc, ddstTensorDesc;
 	cudnnTensorDescriptor_t normTensorDesc, normDstTensorDesc, normDstTensorDescF16;
-    cudnnFilterDescriptor_t weightDesc;
+	cudnnFilterDescriptor_t weightDesc;
     cudnnFilterDescriptor_t dweightDesc;
     cudnnConvolutionDescriptor_t convDesc;
     cudnnConvolutionFwdAlgo_t fw_algo;

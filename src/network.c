@@ -187,6 +187,7 @@ network make_network(int n)
 void forward_network(network net, network_state state)
 {
     state.workspace = net.workspace;
+	state.workspace_xnor = net.workspace_xnor;
     int i;
     for(i = 0; i < net.n; ++i){
         state.index = i;
@@ -787,6 +788,7 @@ void free_network(network net)
 	if (net.max_input16_size) free(net.max_input16_size);
 	if (net.max_output16_size) free(net.max_output16_size);
 #else
+	free(net.workspace_xnor);
 	free(net.workspace);
 #endif
 }

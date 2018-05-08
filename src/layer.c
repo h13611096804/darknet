@@ -51,6 +51,9 @@ void free_layer(layer l)
 	if (l.r_cpu)              free(l.r_cpu);
 	if (l.h_cpu)              free(l.h_cpu);
 	if (l.binary_input)       free(l.binary_input);
+	if (l.binary_input_xnor)  free(l.binary_input_xnor);
+	if (l.binary_weights_xnor)free(l.binary_weights_xnor);
+	if (l.alpha_xnor)         free(l.alpha_xnor);
 
 #ifdef GPU
 	if (l.indexes_gpu)           cuda_free((float *)l.indexes_gpu);

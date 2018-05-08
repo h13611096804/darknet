@@ -24,10 +24,15 @@ void cudnn_convolutional_setup(layer *l, int cudnn_preference);
 void cuda_convert_f32_to_f16(float* input_f32, size_t size, float *output_f16);
 #endif
 #endif
-
-convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int n, int size, int stride, int padding, ACTIVATION activation, int batch_normalize, int binary, int xnor, int adam);
+void binarize_xnor_weights_save(float *weights, int n, int c, int size, BINARY_WORD *binary, float *mean);
+void binarize_weights_save(float *weights, int n, int size, float *binary, float *mean);
+convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int n, int size, int stride, int padding, ACTIVATION activation, int batch_normalize, int binary, int xnor, int depthwise, int adam);
 void denormalize_convolutional_layer(convolutional_layer l);
+void binarize_weights_save(float *weights, int n, int size, float *binary, float *mean);//hanxu
+void binarize_xnor_weights_save(float *weights, int n, int c, int size, BINARY_WORD *binary, float *mean);//hanxu
+void forward_binary_layer(layer l, network_state state, int n, int m, int k);
 void resize_convolutional_layer(convolutional_layer *layer, int w, int h);
+void forward_xnor_layer(layer l, network_state state, int n, int m, int k);
 void forward_convolutional_layer(const convolutional_layer layer, network_state state);
 void update_convolutional_layer(convolutional_layer layer, int batch, float learning_rate, float momentum, float decay);
 image *visualize_convolutional_layer(convolutional_layer layer, char *window, image *prev_weights);

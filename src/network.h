@@ -13,12 +13,14 @@ extern "C" {
 #include "data.h"
 #include "tree.h"
 
+typedef uint32_t BINARY_WORD;
 typedef enum {
     CONSTANT, STEP, EXP, POLY, STEPS, SIG, RANDOM
 } learning_rate_policy;
 
 typedef struct network{
     float *workspace;
+	BINARY_WORD *workspace_xnor;
     int n;
     int batch;
 	int *seen;
@@ -52,13 +54,15 @@ typedef struct network{
     int h, w, c;
     int max_crop;
     int min_crop;
-    int flip; // horizontal flip 50% probability augmentaiont for classifier training (default = 1)
-    float angle;
+	int flip; // horizontal flip 50% probability augmentaiont for classifier training (default = 1)
+	float angle;
     float aspect;
     float exposure;
     float saturation;
     float hue;
 	int small_object;
+	//hanxu
+	int xnor;
 
     int gpu_index;
     tree *hierarchy;
@@ -75,6 +79,7 @@ typedef struct network{
 } network;
 
 typedef struct network_state {
+	BINARY_WORD *workspace_xnor;
     float *truth;
     float *input;
     float *delta;
