@@ -28,7 +28,7 @@
 #include "opencv2/core/version.hpp"
 #ifndef CV_VERSION_EPOCH
 #include "opencv2/videoio/videoio.hpp"
-#define OPENCV_VERSION CVAUX_STR(CV_VERSION_MAJOR)""CVAUX_STR(CV_VERSION_MINOR)""CVAUX_STR(CV_VERSION_REVISION)
+#define OPENCV_VERSION CVAUX_STR(CV_VERSION_MAJOR)"" CVAUX_STR(CV_VERSION_MINOR)"" CVAUX_STR(CV_VERSION_REVISION)
 #pragma comment(lib, "opencv_world" OPENCV_VERSION ".lib")
 #ifdef TRACK_OPTFLOW
 #pragma comment(lib, "opencv_cudaoptflow" OPENCV_VERSION ".lib")
@@ -181,9 +181,9 @@ void drawArrow(cv::Mat& img, cv::Point pStart, cv::Point pEnd, int len, int alph
 {
 	const double PI = 3.1415926;
 	cv::Point arrow;
-	//è®¡ç®— Î¸ è§’ï¼ˆæœ€ç®€å•çš„ä¸€ç§æƒ…å†µåœ¨ä¸‹é¢å›¾ç¤ºä¸­å·²ç»å±•ç¤ºï¼Œå…³é”®åœ¨äº atan2 å‡½æ•°ï¼Œè¯¦æƒ…è§ä¸‹é¢ï¼‰   
+	//¼ÆËã ¦È ½Ç£¨×î¼òµ¥µÄÒ»ÖÖÇé¿öÔÚÏÂÃæÍ¼Ê¾ÖĞÒÑ¾­Õ¹Ê¾£¬¹Ø¼üÔÚÓÚ atan2 º¯Êı£¬ÏêÇé¼ûÏÂÃæ£©   
 	//line(img, pStart, pEnd, color, thickness, lineType);
-	//è®¡ç®—ç®­è§’è¾¹çš„å¦ä¸€ç«¯çš„ç«¯ç‚¹ä½ç½®ï¼ˆä¸Šé¢çš„è¿˜æ˜¯ä¸‹é¢çš„è¦çœ‹ç®­å¤´çš„æŒ‡å‘ï¼Œä¹Ÿå°±æ˜¯pStartå’ŒpEndçš„ä½ç½®ï¼‰ 
+	//¼ÆËã¼ı½Ç±ßµÄÁíÒ»¶ËµÄ¶ËµãÎ»ÖÃ£¨ÉÏÃæµÄ»¹ÊÇÏÂÃæµÄÒª¿´¼ıÍ·µÄÖ¸Ïò£¬Ò²¾ÍÊÇpStartºÍpEndµÄÎ»ÖÃ£© 
 	arrow.x = pEnd.x + len * cos(angle + PI * alpha / 180);
 	arrow.y = pEnd.y + len * sin(angle + PI * alpha / 180);
 	line(img, pEnd, arrow, color, thickness, lineType);

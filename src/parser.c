@@ -162,10 +162,9 @@ convolutional_layer parse_convolutional(list *options, size_params params)
     if(!(h && w && c)) error("Layer before convolutional layer must output image.");
     int batch_normalize = option_find_int_quiet(options, "batch_normalize", 0);
     int binary = option_find_int_quiet(options, "binary", 0);
-    int xnor = option_find_int_quiet(options, "xnor", params.net.xnor);
-	int depthwise = option_find_int_quiet(options, "depthwise", 0);
+    int xnor = option_find_int_quiet(options, "xnor", 0);
 
-    convolutional_layer layer = make_convolutional_layer(batch,h,w,c,n,size,stride,padding,activation, batch_normalize, binary, xnor, depthwise, params.net.adam);
+    convolutional_layer layer = make_convolutional_layer(batch,h,w,c,n,size,stride,padding,activation, batch_normalize, binary, xnor, params.net.adam);
     layer.flipped = option_find_int_quiet(options, "flipped", 0);
     layer.dot = option_find_float_quiet(options, "dot", 0);
     if(params.net.adam){
@@ -269,9 +268,14 @@ layer parse_yolo(list *options, size_params params)
 
 	char *a = option_find_str(options, "mask", 0);
 	int *mask = parse_yolo_mask(a, &num);
-	int max_boxes = option_find_int_quiet(options, "max", 30);
+	int max_boxes = option_find_int_quiet(options, "max", 90);
 	layer l = make_yolo_layer(params.batch, params.w, params.h, num, total, mask, classes, max_boxes);
-	assert(l.outputs == params.inputs);
+	if (l.outputs != params.inputs) {
+		printf("Error: l.outputs == params.inputs \n");
+		printf("filters= in the [convolutional]-layer doesn't correspond to classes= or mask= in [yolo]-layer \n");
+		exit(EXIT_FAILURE);
+	}
+	//assert(l.outputs == params.inputs);
 
 	//l.max_boxes = option_find_int_quiet(options, "max", 90);
 	l.jitter = option_find_float(options, "jitter", .2);
@@ -292,7 +296,7 @@ layer parse_yolo(list *options, size_params params)
 		for (i = 0; i < len; ++i) {
 			if (a[i] == ',') ++n;
 		}
-		for (i = 0; i < n && i < total * 2; ++i) {
+		for (i = 0; i < n && i < total*2; ++i) {
 			float bias = atof(a);
 			l.biases[i] = bias;
 			a = strchr(a, ',') + 1;
@@ -306,10 +310,15 @@ layer parse_region(list *options, size_params params)
     int coords = option_find_int(options, "coords", 4);
     int classes = option_find_int(options, "classes", 20);
     int num = option_find_int(options, "num", 1);
-	int max_boxes = option_find_int_quiet(options, "max", 30);
+	int max_boxes = option_find_int_quiet(options, "max", 90);
 
     layer l = make_region_layer(params.batch, params.w, params.h, num, classes, coords, max_boxes);
-    assert(l.outputs == params.inputs);
+	if (l.outputs != params.inputs) {
+		printf("Error: l.outputs == params.inputs \n");
+		printf("filters= in the [convolutional]-layer doesn't correspond to classes= or num= in [region]-layer \n");
+		exit(EXIT_FAILURE);
+	}
+    //assert(l.outputs == params.inputs);
 
     l.log = option_find_int_quiet(options, "log", 0);
     l.sqrt = option_find_int_quiet(options, "sqrt", 0);
@@ -345,7 +354,7 @@ layer parse_region(list *options, size_params params)
         for(i = 0; i < len; ++i){
             if (a[i] == ',') ++n;
         }
-		for (i = 0; i < n && i < num * 2; ++i) {
+        for(i = 0; i < n && i < num*2; ++i){
             float bias = atof(a);
             l.biases[i] = bias;
             a = strchr(a, ',')+1;
@@ -611,7 +620,6 @@ void parse_net_options(list *options, network *net)
     net->subdivisions = subdivs;
 
     net->adam = option_find_int_quiet(options, "adam", 0);
-	net->xnor = option_find_int_quiet(options, "xnor", 0);
     if(net->adam){
         net->B1 = option_find_float(options, "B1", .9);
         net->B2 = option_find_float(options, "B2", .999);
@@ -714,6 +722,7 @@ network parse_network_cfg_custom(char *filename, int batch)
     params.time_steps = net.time_steps;
     params.net = net;
 
+	float bflops = 0;
     size_t workspace_size = 0;
     n = n->next;
     int count = 0;
@@ -721,7 +730,7 @@ network parse_network_cfg_custom(char *filename, int batch)
     fprintf(stderr, "layer     filters    size              input                output\n");
     while(n){
         params.index = count;
-        fprintf(stderr, "%5d ", count);
+        fprintf(stderr, "%4d ", count);
         s = (section *)n->val;
         options = s->options;
         layer l = {0};
@@ -798,21 +807,21 @@ network parse_network_cfg_custom(char *filename, int batch)
             params.c = l.out_c;
             params.inputs = l.outputs;
         }
+		if (l.bflops > 0) bflops += l.bflops;
     }   
     free_list(sections);
     net.outputs = get_network_output_size(net);
     net.output = get_network_output(net);
+	printf("Total BFLOPS %5.3f \n", bflops);
     if(workspace_size){
         //printf("%ld\n", workspace_size);
 #ifdef GPU
         if(gpu_index >= 0){
-            net.workspace = cuda_make_array(0, (workspace_size-1)/sizeof(float)+1);
+            net.workspace = cuda_make_array(0, workspace_size/sizeof(float) + 1);
         }else {
             net.workspace = calloc(1, workspace_size);
         }
 #else
-		//hanxu
-		net.workspace_xnor = calloc(1, (workspace_size - 1) / sizeof(float) + 1);
         net.workspace = calloc(1, workspace_size);
 #endif
     }
@@ -863,60 +872,37 @@ void save_convolutional_weights_binary(layer l, FILE *fp)
         pull_convolutional_layer(l);
     }
 #endif
-	// binarize_weights(l.weights, l.n, l.c*l.size*l.size, l.binary_weights);
-	// int size = l.c*l.size*l.size;
-	int num = l.n* l.size*l.size*l.c;
-	int num_1 = num>>5;
+    binarize_weights(l.weights, l.n, l.c*l.size*l.size, l.binary_weights);
+    int size = l.c*l.size*l.size;
     int i, j, k;
     fwrite(l.biases, sizeof(float), l.n, fp);
-   // if (l.batch_normalize && !l.xnor){
-	if (l.batch_normalize) {
+    if (l.batch_normalize){
         fwrite(l.scales, sizeof(float), l.n, fp);
         fwrite(l.rolling_mean, sizeof(float), l.n, fp);
         fwrite(l.rolling_variance, sizeof(float), l.n, fp);
     }
-	fwrite(l.weights, sizeof(float), num, fp);
-	//hanxu:
-	//if (l.batch_normalize && l.xnor) {
-	//	fwrite(l.scales, sizeof(float), l.c, fp);
-	//	fwrite(l.rolling_mean, sizeof(float), l.c, fp);
-	//	fwrite(l.rolling_variance, sizeof(float), l.c, fp);
-	//}
-	//hanxu
-	if (32 > l.c) {
-		i = 0;
-		//binarize_weights_save(l.weights, l.n, l.c*l.size*l.size, l.binary_weights, l.alpha_xnor);
-		//fwrite(l.binary_weights, sizeof(float), l.c * l.n * l.size * l.size, fp);
-		//fwrite(l.weights, sizeof(float), l.c * l.n * l.size * l.size, fp);
-	}
-	else {
-		binarize_xnor_weights_save(l.weights, l.n, l.c, l.size, l.binary_weights_xnor, l.alpha_xnor);
-		fwrite(l.binary_weights_xnor, sizeof(BINARY_WORD), num_1, fp);
-		fwrite(l.alpha_xnor, sizeof(float), l.n, fp);
-	/*		for (i = 0; i < l.n; ++i) {
-				l.alpha_xnor[i] = l.binary_weights[i*l.size];
-				if (l.alpha_xnor[i] < 0) l.alpha_xnor[i] = -l.alpha_xnor[i];
-				for (j = 0; j < size / 8; ++j) {
-					int index = i*size + j * 8;
-					unsigned char c = 0;
-					for (k = 0; k < 8; ++k) {
-						if (j * 8 + k >= size) break;
-						if (l.binary_weights[index + k] > 0) c = (c | 1 << k);
-					}
-					fwrite(&c, sizeof(char), 1, fp);
-				}
-			}*/
-	}
-
-
+    for(i = 0; i < l.n; ++i){
+        float mean = l.binary_weights[i*size];
+        if(mean < 0) mean = -mean;
+        fwrite(&mean, sizeof(float), 1, fp);
+        for(j = 0; j < size/8; ++j){
+            int index = i*size + j*8;
+            unsigned char c = 0;
+            for(k = 0; k < 8; ++k){
+                if (j*8 + k >= size) break;
+                if (l.binary_weights[index + k] > 0) c = (c | 1<<k);
+            }
+            fwrite(&c, sizeof(char), 1, fp);
+        }
+    }
 }
 
 void save_convolutional_weights(layer l, FILE *fp)
 {
-    /*if(l.binary || l.xnor){
-        save_convolutional_weights_binary(l, fp);
-        return;
-    }*/
+    if(l.binary){
+        //save_convolutional_weights_binary(l, fp);
+        //return;
+    }
 #ifdef GPU
     if(gpu_index >= 0){
         pull_convolutional_layer(l);
@@ -1078,45 +1064,26 @@ void load_batchnorm_weights(layer l, FILE *fp)
 void load_convolutional_weights_binary(layer l, FILE *fp)
 {
     fread(l.biases, sizeof(float), l.n, fp);
-	//if (l.batch_normalize && (!l.dontloadscales)&&!l.xnor){
-	if (l.batch_normalize && (!l.dontloadscales)) {
-		fread(l.scales, sizeof(float), l.n, fp);
-		fread(l.rolling_mean, sizeof(float), l.n, fp);
-		fread(l.rolling_variance, sizeof(float), l.n, fp);
-	}
-	//hanxu
-	/*if (l.batch_normalize && l.xnor) {
-		fread(l.scales, sizeof(float), l.c, fp);
-		fread(l.rolling_mean, sizeof(float), l.c, fp);
-		fread(l.rolling_variance, sizeof(float), l.c, fp);
-	}*/
-	fread(l.weights, sizeof(float), l.n * l.size * l.size * l.c, fp);
-
-	if (32 > l.c) {
-		int i = 0;
-		//fread(l.weights, sizeof(float), l.n * l.size * l.size * l.c, fp);
-	//	fread(l.binary_weights, sizeof(float), l.n * l.size * l.size * l.c, fp);
-	}
-	else {
-
-		fread(l.binary_weights_xnor, sizeof(BINARY_WORD), (l.n * l.size * l.size * l.c) >> 5, fp);
-		fread(l.alpha_xnor, sizeof(float), l.n, fp);
-			/*int size = l.c*l.size*l.size;
-			int i, j, k;
-			for (i = 0; i < l.n; ++i) {
-				float mean = 0;
-				fread(&mean, sizeof(float), 1, fp);
-				for (j = 0; j < size / 8; ++j) {
-					int index = i*size + j * 8;
-					unsigned char c = 0;
-					fread(&c, sizeof(char), 1, fp);
-					for (k = 0; k < 8; ++k) {
-						if (j * 8 + k >= size) break;
-						l.weights[index + k] = (c & 1 << k) ? mean : -mean;
-					}
-				}
-			}*/
-	}
+    if (l.batch_normalize && (!l.dontloadscales)){
+        fread(l.scales, sizeof(float), l.n, fp);
+        fread(l.rolling_mean, sizeof(float), l.n, fp);
+        fread(l.rolling_variance, sizeof(float), l.n, fp);
+    }
+    int size = l.c*l.size*l.size;
+    int i, j, k;
+    for(i = 0; i < l.n; ++i){
+        float mean = 0;
+        fread(&mean, sizeof(float), 1, fp);
+        for(j = 0; j < size/8; ++j){
+            int index = i*size + j*8;
+            unsigned char c = 0;
+            fread(&c, sizeof(char), 1, fp);
+            for(k = 0; k < 8; ++k){
+                if (j*8 + k >= size) break;
+                l.weights[index + k] = (c & 1<<k) ? mean : -mean;
+            }
+        }
+    }
 #ifdef GPU
     if(gpu_index >= 0){
         push_convolutional_layer(l);
@@ -1126,11 +1093,10 @@ void load_convolutional_weights_binary(layer l, FILE *fp)
 
 void load_convolutional_weights(layer l, FILE *fp)
 {
-	//hanxu
-	/*if(l.binary || l.xnor){
-        load_convolutional_weights_binary(l, fp);
-        return;
-    }*/
+    if(l.binary){
+        //load_convolutional_weights_binary(l, fp);
+        //return;
+    }
     int num = l.n*l.c*l.size*l.size;
     fread(l.biases, sizeof(float), l.n, fp);
     if (l.batch_normalize && (!l.dontloadscales)){

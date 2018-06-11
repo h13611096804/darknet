@@ -28,18 +28,24 @@
 #include "route_layer.h"
 #include "shortcut_layer.h"
 #include "yolo_layer.h"
+#include "upsample_layer.h"
 #include "parser.h"
 
-network *load_network(char *cfg, char *weights, int clear)
+network *load_network_custom(char *cfg, char *weights, int clear, int batch)
 {
 	printf(" Try to load cfg: %s, weights: %s, clear = %d \n", cfg, weights, clear);
 	network *net = calloc(1, sizeof(network));
-	*net = parse_network_cfg(cfg);
+	*net = parse_network_cfg_custom(cfg, batch);
 	if (weights && weights[0] != 0) {
 		load_weights(net, weights);
 	}
 	if (clear) (*net->seen) = 0;
 	return net;
+}
+
+network *load_network(char *cfg, char *weights, int clear)
+{
+	return load_network_custom(cfg, weights, clear, 0);
 }
 
 int get_current_batch(network net)
@@ -172,7 +178,7 @@ network make_network(int n)
     net.n = n;
     net.layers = calloc(net.n, sizeof(layer));
     net.seen = calloc(1, sizeof(int));
-    #ifdef GPU
+#ifdef GPU
     net.input_gpu = calloc(1, sizeof(float *));
     net.truth_gpu = calloc(1, sizeof(float *));
 
@@ -180,7 +186,7 @@ network make_network(int n)
 	net.output16_gpu = calloc(1, sizeof(float *));
 	net.max_input16_size = calloc(1, sizeof(size_t));
 	net.max_output16_size = calloc(1, sizeof(size_t));
-    #endif
+#endif
     return net;
 }
 
@@ -438,8 +444,8 @@ int resize_network(network *net, int w, int h)
     }
 #ifdef GPU
     if(gpu_index >= 0){
-		printf(" try to allocate workspace = %zu * sizeof(float), ", (workspace_size - 1) / sizeof(float) + 1);
-        net->workspace = cuda_make_array(0, (workspace_size-1)/sizeof(float)+1);
+		printf(" try to allocate workspace = %zu * sizeof(float), ", workspace_size / sizeof(float) + 1);
+        net->workspace = cuda_make_array(0, workspace_size/sizeof(float) + 1);
 		printf(" CUDA allocate done! \n");
     }else {
         free(net->workspace);
@@ -486,6 +492,11 @@ image get_network_image_layer(network net, int i)
     }
     image def = {0};
     return def;
+}
+
+layer* get_network_layer(network* net, int i)
+{
+    return net->layers + i;
 }
 
 image get_network_image(network net)
@@ -577,7 +588,7 @@ void custom_get_region_detections(layer l, int w, int h, int net_w, int net_h, f
 	box *boxes = calloc(l.w*l.h*l.n, sizeof(box));
 	float **probs = calloc(l.w*l.h*l.n, sizeof(float *));
 	int i, j;
-	for (j = 0; j < l.w*l.h*l.n; ++j) probs[j] = calloc(l.classes, sizeof(float *));
+	for (j = 0; j < l.w*l.h*l.n; ++j) probs[j] = calloc(l.classes, sizeof(float));
 	get_region_boxes(l, 1, 1, thresh, probs, boxes, 0, map);
 	for (j = 0; j < l.w*l.h*l.n; ++j) {
 		dets[j].classes = l.classes;
@@ -597,12 +608,18 @@ void custom_get_region_detections(layer l, int w, int h, int net_w, int net_h, f
 
 void fill_network_boxes(network *net, int w, int h, float thresh, float hier, int *map, int relative, detection *dets, int letter)
 {
+	int prev_classes = -1;
 	int j;
 	for (j = 0; j < net->n; ++j) {
 		layer l = net->layers[j];
 		if (l.type == YOLO) {
 			int count = get_yolo_detections(l, w, h, net->w, net->h, thresh, map, relative, dets, letter);
 			dets += count;
+			if (prev_classes < 0) prev_classes = l.classes;
+			else if (prev_classes != l.classes) {
+				printf(" Error: Different [yolo] layers have different number of classes = %d and %d - check your cfg-file! \n",
+					prev_classes, l.classes);
+			}
 		}
 		if (l.type == REGION) {
 			custom_get_region_detections(l, w, h, net->w, net->h, thresh, map, hier, relative, dets, letter);
@@ -635,7 +652,8 @@ void free_detections(detection *dets, int n)
 
 float *network_predict_image(network *net, image im)
 {
-	image imr = letterbox_image(im, net->w, net->h);
+	//image imr = letterbox_image(im, net->w, net->h);
+	image imr = resize_image(im, net->w, net->h);
 	set_batch_network(net, 1);
 	float *p = network_predict(*net, imr.data);
 	free_image(imr);

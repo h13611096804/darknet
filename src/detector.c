@@ -1,8 +1,3 @@
-#ifdef _DEBUG
-#include <stdlib.h> 
-#include <crtdbg.h>  
-#endif
-
 #include "network.h"
 #include "region_layer.h"
 #include "cost_layer.h"
@@ -21,10 +16,10 @@
 
 #ifndef CV_VERSION_EPOCH
 #include "opencv2/videoio/videoio_c.h"
-#define OPENCV_VERSION CVAUX_STR(CV_VERSION_MAJOR)""CVAUX_STR(CV_VERSION_MINOR)""CVAUX_STR(CV_VERSION_REVISION)
+#define OPENCV_VERSION CVAUX_STR(CV_VERSION_MAJOR)"" CVAUX_STR(CV_VERSION_MINOR)"" CVAUX_STR(CV_VERSION_REVISION)
 #pragma comment(lib, "opencv_world" OPENCV_VERSION ".lib")
 #else
-#define OPENCV_VERSION CVAUX_STR(CV_VERSION_EPOCH)""CVAUX_STR(CV_VERSION_MAJOR)""CVAUX_STR(CV_VERSION_MINOR)
+#define OPENCV_VERSION CVAUX_STR(CV_VERSION_EPOCH)"" CVAUX_STR(CV_VERSION_MAJOR)"" CVAUX_STR(CV_VERSION_MINOR)
 #pragma comment(lib, "opencv_core" OPENCV_VERSION ".lib")
 #pragma comment(lib, "opencv_imgproc" OPENCV_VERSION ".lib")
 #pragma comment(lib, "opencv_highgui" OPENCV_VERSION ".lib")
@@ -66,6 +61,11 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     srand(time(0));
     network net = nets[0];
 
+	if ((net.batch * net.subdivisions) == 1) {
+		printf("\n Error: You set incorrect value batch=1 for Training! You should set batch=64 subdivision=64 \n");
+		getchar();
+	}
+
     int imgs = net.batch * net.subdivisions * ngpus;
     printf("Learning Rate: %g, Momentum: %g, Decay: %g\n", net.learning_rate, net.momentum, net.decay);
     data train, buffer;
@@ -87,7 +87,8 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     load_args args = {0};
     args.w = net.w;
     args.h = net.h;
-    args.paths = paths;
+	args.c = net.c;
+	args.paths = paths;
     args.n = imgs;
     args.m = plist->size;
     args.classes = classes;
@@ -105,7 +106,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     args.hue = net.hue;
 
 #ifdef OPENCV
-	args.threads = 3;
+	args.threads = 3 * ngpus;
 	IplImage* img = NULL;
 	float max_img_loss = 5;
 	int number_of_lines = 100;
@@ -121,12 +122,24 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     while(get_current_batch(net) < net.max_batches){
 		if(l.random && count++%10 == 0){
             printf("Resizing\n");
-			int dim = (rand() % 12 + (init_w/32 - 5)) * 32;	// +-160
-            //if (get_current_batch(net)+100 > net.max_batches) dim = 544;
+			//int dim = (rand() % 12 + (init_w/32 - 5)) * 32;	// +-160
             //int dim = (rand() % 4 + 16) * 32;
-            printf("%d\n", dim);
-            args.w = dim;
-            args.h = dim;
+			//if (get_current_batch(net)+100 > net.max_batches) dim = 544;
+			
+			//int random_val = rand() % 12;
+			//int dim_w = (random_val + (init_w / 32 - 5)) * 32;	// +-160
+			//int dim_h = (random_val + (init_h / 32 - 5)) * 32;	// +-160
+
+			float random_val = rand_scale(1.4);	// *x or /x
+			int dim_w = roundl(random_val*init_w / 32) * 32;
+			int dim_h = roundl(random_val*init_h / 32) * 32;
+
+			if (dim_w < 32) dim_w = 32;
+			if (dim_h < 32) dim_h = 32;
+
+			printf("%d x %d \n", dim_w, dim_h);
+			args.w = dim_w;
+			args.h = dim_h;
 
             pthread_join(load_thread, 0);
             train = buffer;
@@ -134,7 +147,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
             load_thread = load_data(args);
 
             for(i = 0; i < ngpus; ++i){
-                resize_network(nets + i, dim, dim);
+                resize_network(nets + i, dim_w, dim_h);
             }
             net = nets[0];
         }
@@ -177,7 +190,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
         avg_loss = avg_loss*.9 + loss*.1;
 
         i = get_current_batch(net);
-        printf("\n %d: %f, %f avg, %f rate, %lf seconds, %d images\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), (what_time_is_it_now()-time), i*imgs);
+        printf("\n %d: %f, %f avg loss, %f rate, %lf seconds, %d images\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), (what_time_is_it_now()-time), i*imgs);
 
 #ifdef OPENCV
 		if(!dont_show)
@@ -204,8 +217,25 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     sprintf(buff, "%s/%s_final.weights", backup_directory, base);
     save_weights(net, buff);
 
-	//cvReleaseImage(&img);
-	//cvDestroyAllWindows();
+#ifdef OPENCV
+	cvReleaseImage(&img);
+	cvDestroyAllWindows();
+#endif
+
+	// free memory
+	pthread_join(load_thread, 0);
+	free_data(buffer);
+
+	free(base);
+	free(paths);
+	free_list_contents(plist);
+	free_list(plist);
+
+	free_list_contents_kvp(options);
+	free_list(options);
+
+	free(nets);
+	free_network(net);
 }
 
 
@@ -359,6 +389,7 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
 	load_args args = { 0 };
 	args.w = net.w;
 	args.h = net.h;
+	args.c = net.c;
 	args.type = IMAGE_DATA;
 	//args.type = LETTERBOX_DATA;
 
@@ -416,7 +447,7 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
 		fprintf(fp, "\n]\n");
 		fclose(fp);
 	}
-	fprintf(stderr, "Total Detection Time: %f Seconds\n", time(0) - start);
+	fprintf(stderr, "Total Detection Time: %f Seconds\n", (double)time(0) - start);
 }
 
 void validate_detector_recall(char *datacfg, char *cfgfile, char *weightfile)
@@ -453,7 +484,7 @@ void validate_detector_recall(char *datacfg, char *cfgfile, char *weightfile)
 
 	for (i = 0; i < m; ++i) {
 		char *path = paths[i];
-		image orig = load_image_color(path, 0, 0);
+		image orig = load_image(path, 0, 0, net.c);
 		image sized = resize_image(orig, net.w, net.h);
 		char *id = basecfg(path);
 		network_predict(net, sized.data);
@@ -463,13 +494,7 @@ void validate_detector_recall(char *datacfg, char *cfgfile, char *weightfile)
 		if (nms) do_nms_obj(dets, nboxes, 1, nms);
 
 		char labelpath[4096];
-		find_replace(path, "images", "labels", labelpath);
-		find_replace(labelpath, "JPEGImages", "labels", labelpath);
-		find_replace(labelpath, ".jpg", ".txt", labelpath);
-		find_replace(labelpath, ".png", ".txt", labelpath);
-		find_replace(labelpath, ".bmp", ".txt", labelpath);
-		find_replace(labelpath, ".JPG", ".txt", labelpath);
-		find_replace(labelpath, ".JPEG", ".txt", labelpath);
+		replace_image_to_label(path, labelpath);
 
 		int num_labels = 0;
 		box_label *truth = read_boxes(labelpath, &num_labels);
@@ -531,6 +556,7 @@ void validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, float
 	char *mapf = option_find_str(options, "map", 0);
 	int *map = 0;
 	if (mapf) map = read_map(mapf);
+	FILE* reinforcement_fd = NULL;
 
 	network net = parse_network_cfg_custom(cfgfile, 1);	// set batch=1
 	if (weightfile) {
@@ -571,6 +597,7 @@ void validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, float
 	load_args args = { 0 };
 	args.w = net.w;
 	args.h = net.h;
+	args.c = net.c;
 	args.type = IMAGE_DATA;
 	//args.type = LETTERBOX_DATA;
 
@@ -620,13 +647,7 @@ void validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, float
 			if (nms) do_nms_sort(dets, nboxes, l.classes, nms);
 
 			char labelpath[4096];
-			find_replace(path, "images", "labels", labelpath);
-			find_replace(labelpath, "JPEGImages", "labels", labelpath);
-			find_replace(labelpath, ".jpg", ".txt", labelpath);
-			find_replace(labelpath, ".png", ".txt", labelpath);
-			find_replace(labelpath, ".bmp", ".txt", labelpath);
-			find_replace(labelpath, ".JPG", ".txt", labelpath);
-			find_replace(labelpath, ".JPEG", ".txt", labelpath);
+			replace_image_to_label(path, labelpath);
 			int num_labels = 0;
 			box_label *truth = read_boxes(labelpath, &num_labels);
 			int i, j;
@@ -642,11 +663,8 @@ void validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, float
 				char *path_dif = paths_dif[image_index];
 
 				char labelpath_dif[4096];
-				find_replace(path_dif, "images", "labels", labelpath_dif);
-				find_replace(labelpath_dif, "JPEGImages", "labels", labelpath_dif);
-				find_replace(labelpath_dif, ".jpg", ".txt", labelpath_dif);
-				find_replace(labelpath_dif, ".JPEG", ".txt", labelpath_dif);
-				find_replace(labelpath_dif, ".png", ".txt", labelpath_dif);				
+				replace_image_to_label(path_dif, labelpath_dif);
+			
 				truth_dif = read_boxes(labelpath_dif, &num_labels_dif);
 			}
 
@@ -718,8 +736,17 @@ void validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, float
 					}
 				}
 			}
-			
+				
 			unique_truth_count += num_labels;
+
+			//static int previous_errors = 0;
+			//int total_errors = fp_for_thresh + (unique_truth_count - tp_for_thresh);
+			//int errors_in_this_image = total_errors - previous_errors;
+			//previous_errors = total_errors;
+			//if(reinforcement_fd == NULL) reinforcement_fd = fopen("reinforcement.txt", "wb");
+			//char buff[1000];
+			//sprintf(buff, "%s\n", path);
+			//if(errors_in_this_image > 0) fwrite(buff, sizeof(char), strlen(buff), reinforcement_fd);
 
 			free_detections(dets, nboxes);
 			free(id);
@@ -841,6 +868,7 @@ void validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, float
 	free(truth_classes_count);
 
 	fprintf(stderr, "Total Detection Time: %f Seconds\n", (double)(time(0) - start));
+	if (reinforcement_fd != NULL) fclose(reinforcement_fd);
 }
 
 #ifdef OPENCV
@@ -883,18 +911,23 @@ void calc_anchors(char *datacfg, int num_of_clusters, int width, int height, int
 	for (i = 0; i < number_of_images; ++i) {
 		char *path = paths[i];
 		char labelpath[4096];
-		find_replace(path, "images", "labels", labelpath);
-		find_replace(labelpath, "JPEGImages", "labels", labelpath);
-		find_replace(labelpath, ".jpg", ".txt", labelpath);
-		find_replace(labelpath, ".png", ".txt", labelpath);
-		find_replace(labelpath, ".bmp", ".txt", labelpath);
-		find_replace(labelpath, ".JPG", ".txt", labelpath);
-		find_replace(labelpath, ".JPEG", ".txt", labelpath);
+		replace_image_to_label(path, labelpath);
+
 		int num_labels = 0;
 		box_label *truth = read_boxes(labelpath, &num_labels);
 		//printf(" new path: %s \n", labelpath);
+		char buff[1024];
 		for (j = 0; j < num_labels; ++j)
 		{
+			if (truth[j].x > 1 || truth[j].x <= 0 || truth[j].y > 1 || truth[j].y <= 0 ||
+				truth[j].w > 1 || truth[j].w <= 0 || truth[j].h > 1 || truth[j].h <= 0) 
+			{				
+				printf("\n\nWrong label: %s - j = %d, x = %f, y = %f, width = %f, height = %f \n",
+					labelpath, j, truth[j].x, truth[j].y, truth[j].w, truth[j].h);
+				sprintf(buff, "echo \"Wrong label: %s - j = %d, x = %f, y = %f, width = %f, height = %f\" >> bad_label.list", 
+					labelpath, j, truth[j].x, truth[j].y, truth[j].w, truth[j].h);
+				system(buff);				
+			}
 			number_of_boxes++;
 			rel_width_height_array = realloc(rel_width_height_array, 2 * number_of_boxes * sizeof(float));
 			rel_width_height_array[number_of_boxes * 2 - 2] = truth[j].w * width;
@@ -953,6 +986,7 @@ void calc_anchors(char *datacfg, int num_of_clusters, int width, int height, int
 	//for (i = 0; i < number_of_boxes; ++i)
 	//	printf("%2.2f,%2.2f, ", points->data.fl[i * 2], points->data.fl[i * 2 + 1]);
 
+	printf("\n");
 	float avg_iou = 0;
 	for (i = 0; i < number_of_boxes; ++i) {
 		float box_w = points->data.fl[i * 2];
@@ -976,8 +1010,8 @@ void calc_anchors(char *datacfg, int num_of_clusters, int width, int height, int
 		float box_intersect = min_w*min_h;
 		float box_union = box_w*box_h + anchor_w*anchor_h - box_intersect;
 		float iou = box_intersect / box_union;
-		if (iou > 1 || iou < 0) {
-			printf(" i = %d, box_w = %d, box_h = %d, anchor_w = %d, anchor_h = %d, iou = %f \n",
+		if (iou > 1 || iou < 0) { // || box_w > width || box_h > height) {
+			printf(" Wrong label: i = %d, box_w = %d, box_h = %d, anchor_w = %d, anchor_h = %d, iou = %f \n",
 				i, box_w, box_h, anchor_w, anchor_h, iou);
 		}
 		else avg_iou += iou;
@@ -1041,11 +1075,13 @@ void calc_anchors(char *datacfg, int num_of_clusters, int width, int height, int
 }
 #endif // OPENCV
 
-void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh, float hier_thresh, int dont_show)
+void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh,
+				   float hier_thresh, int dont_show, int ext_output, int save_labels)
 {
     list *options = read_data_cfg(datacfg);
     char *name_list = option_find_str(options, "names", "data/names.list");
-    char **names = get_labels(name_list);
+	int names_size = 0;
+	char **names = get_labels_custom(name_list, &names_size); //get_labels(name_list);
 
     image **alphabet = load_alphabet();
     network net = parse_network_cfg_custom(cfgfile, 1); // set batch=1
@@ -1054,6 +1090,11 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
     }
     //set_batch_network(&net, 1);
 	fuse_conv_batchnorm(net);
+	if (net.layers[net.n - 1].classes != names_size) {
+		printf(" Error: in the file %s number of names %d that isn't equal to classes=%d in the file %s \n", 
+			name_list, names_size, net.layers[net.n - 1].classes, datacfg);
+		if(net.layers[net.n - 1].classes > names_size) getchar();
+	}
     srand(2222222);
     double time;
     char buff[256];
@@ -1072,10 +1113,10 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
             if(!input) return;
             strtok(input, "\n");
         }
-        image im = load_image_color(input,0,0);
+        image im = load_image(input,0,0,net.c);
 		int letterbox = 0;
-        //image sized = resize_image(im, net.w, net.h);
-		image sized = letterbox_image(im, net.w, net.h); letterbox = 1;
+        image sized = resize_image(im, net.w, net.h);
+		//image sized = letterbox_image(im, net.w, net.h); letterbox = 1;
         layer l = net.layers[net.n-1];
 
         //box *boxes = calloc(l.w*l.h*l.n, sizeof(box));
@@ -1093,13 +1134,39 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
 		int nboxes = 0;
 		detection *dets = get_network_boxes(&net, im.w, im.h, thresh, hier_thresh, 0, 1, &nboxes, letterbox);
 		if (nms) do_nms_sort(dets, nboxes, l.classes, nms);
-		draw_detections_v3(im, dets, nboxes, thresh, names, alphabet, l.classes);
-		free_detections(dets, nboxes);
+		draw_detections_v3(im, dets, nboxes, thresh, names, alphabet, l.classes, ext_output);
         save_image(im, "predictions");
 		if (!dont_show) {
 			show_image(im, "predictions");
 		}
 
+		// pseudo labeling concept - fast.ai
+		if(save_labels)
+		{
+			char labelpath[4096];
+			replace_image_to_label(input, labelpath);
+
+			FILE* fw = fopen(labelpath, "wb");
+			int i;
+			for (i = 0; i < nboxes; ++i) {
+				char buff[1024];
+				int class_id = -1;
+				float prob = 0;
+				for (j = 0; j < l.classes; ++j) {
+					if (dets[i].prob[j] > thresh && dets[i].prob[j] > prob) {
+						prob = dets[i].prob[j];
+						class_id = j;
+					}
+				}
+				if (class_id >= 0) {
+					sprintf(buff, "%d %2.4f %2.4f %2.4f %2.4f\n", class_id, dets[i].bbox.x, dets[i].bbox.y, dets[i].bbox.w, dets[i].bbox.h);
+					fwrite(buff, sizeof(char), strlen(buff), fw);
+				}
+			}
+			fclose(fw);
+		}
+
+		free_detections(dets, nboxes);
         free_image(im);
         free_image(sized);
         //free(boxes);
@@ -1115,6 +1182,7 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
 
 	// free memory
 	free_ptrs(names, net.layers[net.n - 1].classes);
+	free_list_contents_kvp(options);
 	free_list(options);
 
 	int i;
@@ -1145,6 +1213,10 @@ void run_detector(int argc, char **argv)
 	int num_of_clusters = find_int_arg(argc, argv, "-num_of_clusters", 5);
 	int width = find_int_arg(argc, argv, "-width", -1);
 	int height = find_int_arg(argc, argv, "-height", -1);
+	// extended output in test mode (output of rect bound coords)
+	// and for recall mode (extended output table-like format with results for best_class fit)
+	int ext_output = find_arg(argc, argv, "-ext_output");
+	int save_labels = find_arg(argc, argv, "-save_labels");
     if(argc < 4){
         fprintf(stderr, "usage: %s %s [train/test/valid] [cfg] [weights (optional)]\n", argv[0], argv[1]);
         return;
@@ -1181,7 +1253,7 @@ void run_detector(int argc, char **argv)
 		if(strlen(weights) > 0)
 			if (weights[strlen(weights) - 1] == 0x0d) weights[strlen(weights) - 1] = 0;
     char *filename = (argc > 6) ? argv[6]: 0;
-    if(0==strcmp(argv[2], "test")) test_detector(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show);
+    if(0==strcmp(argv[2], "test")) test_detector(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels);
     else if(0==strcmp(argv[2], "train")) train_detector(datacfg, cfg, weights, gpus, ngpus, clear, dont_show);
     else if(0==strcmp(argv[2], "valid")) validate_detector(datacfg, cfg, weights, outfile);
     else if(0==strcmp(argv[2], "recall")) validate_detector_recall(datacfg, cfg, weights);
@@ -1196,7 +1268,10 @@ void run_detector(int argc, char **argv)
 			if(strlen(filename) > 0)
 				if (filename[strlen(filename) - 1] == 0x0d) filename[strlen(filename) - 1] = 0;
         demo(cfg, weights, thresh, hier_thresh, cam_index, filename, names, classes, frame_skip, prefix, out_filename,
-			http_stream_port, dont_show);
+			http_stream_port, dont_show, ext_output);
+
+		free_list_contents_kvp(options);
+		free_list(options);
     }
 	else printf(" There isn't such command: %s", argv[2]);
 }
