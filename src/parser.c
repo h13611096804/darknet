@@ -268,9 +268,14 @@ layer parse_yolo(list *options, size_params params)
 
 	char *a = option_find_str(options, "mask", 0);
 	int *mask = parse_yolo_mask(a, &num);
-	int max_boxes = option_find_int_quiet(options, "max", 30);
+	int max_boxes = option_find_int_quiet(options, "max", 90);
 	layer l = make_yolo_layer(params.batch, params.w, params.h, num, total, mask, classes, max_boxes);
-	assert(l.outputs == params.inputs);
+	if (l.outputs != params.inputs) {
+		printf("Error: l.outputs == params.inputs \n");
+		printf("filters= in the [convolutional]-layer doesn't correspond to classes= or mask= in [yolo]-layer \n");
+		exit(EXIT_FAILURE);
+	}
+	//assert(l.outputs == params.inputs);
 
 	//l.max_boxes = option_find_int_quiet(options, "max", 90);
 	l.jitter = option_find_float(options, "jitter", .2);
@@ -305,10 +310,15 @@ layer parse_region(list *options, size_params params)
     int coords = option_find_int(options, "coords", 4);
     int classes = option_find_int(options, "classes", 20);
     int num = option_find_int(options, "num", 1);
-	int max_boxes = option_find_int_quiet(options, "max", 30);
+	int max_boxes = option_find_int_quiet(options, "max", 90);
 
     layer l = make_region_layer(params.batch, params.w, params.h, num, classes, coords, max_boxes);
-    assert(l.outputs == params.inputs);
+	if (l.outputs != params.inputs) {
+		printf("Error: l.outputs == params.inputs \n");
+		printf("filters= in the [convolutional]-layer doesn't correspond to classes= or num= in [region]-layer \n");
+		exit(EXIT_FAILURE);
+	}
+    //assert(l.outputs == params.inputs);
 
     l.log = option_find_int_quiet(options, "log", 0);
     l.sqrt = option_find_int_quiet(options, "sqrt", 0);
@@ -807,7 +817,7 @@ network parse_network_cfg_custom(char *filename, int batch)
         //printf("%ld\n", workspace_size);
 #ifdef GPU
         if(gpu_index >= 0){
-            net.workspace = cuda_make_array(0, (workspace_size-1)/sizeof(float)+1);
+            net.workspace = cuda_make_array(0, workspace_size/sizeof(float) + 1);
         }else {
             net.workspace = calloc(1, workspace_size);
         }

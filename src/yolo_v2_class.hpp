@@ -19,7 +19,6 @@ struct bbox_t {
 	unsigned int obj_id;		// class of object - from range [0, classes-1]
 	unsigned int track_id;		// tracking id for video (0 - untracked, 1 - inf - tracked object)
 	unsigned int frames_counter;// counter of frames on which the object was detected
-	double direction = 0;
 };
 
 struct image_t {
@@ -58,6 +57,7 @@ public:
 	static YOLODLL_API void free_image(image_t m);
 	YOLODLL_API int get_net_width() const;
 	YOLODLL_API int get_net_height() const;
+	YOLODLL_API int get_net_color_depth() const;
 
 	YOLODLL_API std::vector<bbox_t> tracking_id(std::vector<bbox_t> cur_bbox_vec, bool const change_history = true, 
 												int const frames_story = 10, int const max_dist = 150);

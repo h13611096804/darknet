@@ -287,7 +287,7 @@ void draw_detections_v3(image im, detection *dets, int num, float thresh, char *
 		const int best_class = selected_detections[i].best_class;
 		printf("%s: %.0f%%", names[best_class],	selected_detections[i].det.prob[best_class] * 100);
 		if (ext_output)
-			printf("\t(left: %.0f \ttop: %.0f \tw: %0.f \th: %0.f)\n",
+			printf("\t(left_x: %4.0f   top_y: %4.0f   width: %4.0f   height: %4.0f)\n",
 				(selected_detections[i].det.bbox.x - selected_detections[i].det.bbox.w / 2)*im.w,
 				(selected_detections[i].det.bbox.y - selected_detections[i].det.bbox.h / 2)*im.h,
 				selected_detections[i].det.bbox.w*im.w, selected_detections[i].det.bbox.h*im.h);
@@ -437,10 +437,12 @@ void draw_detections(image im, int num, float thresh, box *boxes, float **probs,
 
 #ifdef OPENCV
 
-void draw_detections_cv_v3(IplImage* show_img, detection *dets, int num, float thresh, char **names, image **alphabet, int classes)
+void draw_detections_cv_v3(IplImage* show_img, detection *dets, int num, float thresh, char **names, image **alphabet, int classes, int ext_output)
 {
 	int i, j;
 	if (!show_img) return;
+	static int frame_id = 0;
+	frame_id++;
 
 	for (i = 0; i < num; ++i) {
 		char labelstr[4096] = { 0 };
@@ -455,18 +457,16 @@ void draw_detections_cv_v3(IplImage* show_img, detection *dets, int num, float t
 					strcat(labelstr, ", ");
 					strcat(labelstr, names[j]);
 				}
-				printf("%s: %.0f%%\n", names[j], dets[i].prob[j] * 100);
+				printf("%s: %.0f%% ", names[j], dets[i].prob[j] * 100);
 			}
 		}
 		if (class_id >= 0) {
 			int width = show_img->height * .006;
 
-			/*
-			if(0){
-			width = pow(prob, 1./2.)*10+1;
-			alphabet = 0;
-			}
-			*/
+			//if(0){
+			//width = pow(prob, 1./2.)*10+1;
+			//alphabet = 0;
+			//}
 
 			//printf("%d %s: %.0f%%\n", i, names[class_id], prob*100);
 			int offset = class_id * 123457 % classes;
@@ -516,8 +516,29 @@ void draw_detections_cv_v3(IplImage* show_img, detection *dets, int num, float t
 			color.val[1] = green * 256;
 			color.val[2] = blue * 256;
 
+			// you should create directory: result_img
+			//static int copied_frame_id = -1;
+			//static IplImage* copy_img = NULL;
+			//if (copied_frame_id != frame_id) {
+			//	copied_frame_id = frame_id;
+			//	if(copy_img == NULL) copy_img = cvCreateImage(cvSize(show_img->width, show_img->height), show_img->depth, show_img->nChannels);
+			//	cvCopy(show_img, copy_img, 0);
+			//}
+			//static int img_id = 0;
+			//img_id++;
+			//char image_name[1024];
+			//sprintf(image_name, "result_img/img_%d_%d_%d.jpg", frame_id, img_id, class_id);
+			//CvRect rect = cvRect(pt1.x, pt1.y, pt2.x - pt1.x, pt2.y - pt1.y);
+			//cvSetImageROI(copy_img, rect);
+			//cvSaveImage(image_name, copy_img, 0);
+			//cvResetImageROI(copy_img);
+
 			cvRectangle(show_img, pt1, pt2, color, width, 8, 0);
-			//printf("left=%d, right=%d, top=%d, bottom=%d, obj_id=%d, obj=%s \n", left, right, top, bot, class_id, names[class_id]);
+			if (ext_output)
+				printf("\t(left_x: %4.0f   top_y: %4.0f   width: %4.0f   height: %4.0f)\n", 
+					(float)left, (float)top, b.w*show_img->width, b.h*show_img->height);
+			else
+				printf("\n");
 			cvRectangle(show_img, pt_text_bg1, pt_text_bg2, color, width, 8, 0);
 			cvRectangle(show_img, pt_text_bg1, pt_text_bg2, color, CV_FILLED, 8, 0);	// filled
 			CvScalar black_color;
@@ -936,7 +957,7 @@ image load_image_cv(char *filename, int channels)
 {
     IplImage* src = 0;
     int flag = -1;
-    if (channels == 0) flag = -1;
+    if (channels == 0) flag = 1;
     else if (channels == 1) flag = 0;
     else if (channels == 3) flag = 1;
     else {
@@ -954,7 +975,8 @@ image load_image_cv(char *filename, int channels)
     }
     image out = ipl_to_image(src);
     cvReleaseImage(&src);
-    rgbgr_image(out);
+	if (out.c > 1)
+		rgbgr_image(out);
     return out;
 }
 
@@ -967,8 +989,51 @@ image get_image_from_stream(CvCapture *cap)
     return im;
 }
 
-image get_image_from_stream_resize(CvCapture *cap, int w, int h, IplImage** in_img, int cpp_video_capture)
+image get_image_from_stream_cpp(CvCapture *cap)
 {
+	//IplImage* src = cvQueryFrame(cap);
+	IplImage* src;
+	static int once = 1;
+	if (once) {
+		once = 0;
+		do {
+			src = get_webcam_frame(cap);
+			if (!src) return make_empty_image(0, 0, 0);
+		} while (src->width < 1 || src->height < 1 || src->nChannels < 1);
+		printf("Video stream: %d x %d \n", src->width, src->height);
+	}
+	else
+		src = get_webcam_frame(cap);
+
+	if (!src) return make_empty_image(0, 0, 0);
+	image im = ipl_to_image(src);
+	rgbgr_image(im);
+	return im;
+}
+
+int wait_for_stream(CvCapture *cap, IplImage* src, int dont_close) {
+	if (!src) {
+		if (dont_close) src = cvCreateImage(cvSize(416, 416), IPL_DEPTH_8U, 3);
+		else return 0;
+	}
+	if (src->width < 1 || src->height < 1 || src->nChannels < 1) {
+		if (dont_close) {
+			cvReleaseImage(&src);
+			int z = 0;
+			for (z = 0; z < 20; ++z) {
+				get_webcam_frame(cap);
+				cvReleaseImage(&src);
+			}
+			src = cvCreateImage(cvSize(416, 416), IPL_DEPTH_8U, 3);
+		}
+		else return 0;
+	}
+	return 1;
+}
+
+image get_image_from_stream_resize(CvCapture *cap, int w, int h, int c, IplImage** in_img, int cpp_video_capture, int dont_close)
+{
+	c = c ? c : 3;
 	IplImage* src;
 	if (cpp_video_capture) {
 		static int once = 1;
@@ -978,21 +1043,23 @@ image get_image_from_stream_resize(CvCapture *cap, int w, int h, IplImage** in_i
 				src = get_webcam_frame(cap);
 				if (!src) return make_empty_image(0, 0, 0);
 			} while (src->width < 1 || src->height < 1 || src->nChannels < 1);
+			printf("Video stream: %d x %d \n", src->width, src->height);
 		} else
 			src = get_webcam_frame(cap);
 	}
 	else src = cvQueryFrame(cap);
 
-	if (!src) return make_empty_image(0, 0, 0);
-	if (src->width < 1 || src->height < 1 || src->nChannels < 1) return make_empty_image(0, 0, 0);
-	IplImage* new_img = cvCreateImage(cvSize(w, h), IPL_DEPTH_8U, 3);
-	*in_img = cvCreateImage(cvSize(src->width, src->height), IPL_DEPTH_8U, 3);
+	if (cpp_video_capture) 
+		if(!wait_for_stream(cap, src, dont_close)) return make_empty_image(0, 0, 0);
+	IplImage* new_img = cvCreateImage(cvSize(w, h), IPL_DEPTH_8U, c);
+	*in_img = cvCreateImage(cvSize(src->width, src->height), IPL_DEPTH_8U, c);
 	cvResize(src, *in_img, CV_INTER_LINEAR);
 	cvResize(src, new_img, CV_INTER_LINEAR);
 	image im = ipl_to_image(new_img);
 	cvReleaseImage(&new_img);
 	if (cpp_video_capture) cvReleaseImage(&src);
-	rgbgr_image(im);
+	if (c>1)
+		rgbgr_image(im);
 	return im;
 }
 
@@ -1545,16 +1612,23 @@ void exposure_image(image im, float sat)
 
 void distort_image(image im, float hue, float sat, float val)
 {
-    rgb_to_hsv(im);
-    scale_image_channel(im, 1, sat);
-    scale_image_channel(im, 2, val);
-    int i;
-    for(i = 0; i < im.w*im.h; ++i){
-        im.data[i] = im.data[i] + hue;
-        if (im.data[i] > 1) im.data[i] -= 1;
-        if (im.data[i] < 0) im.data[i] += 1;
-    }
-    hsv_to_rgb(im);
+	if (im.c >= 3)
+	{
+		rgb_to_hsv(im);
+		scale_image_channel(im, 1, sat);
+		scale_image_channel(im, 2, val);
+		int i;
+		for(i = 0; i < im.w*im.h; ++i){
+			im.data[i] = im.data[i] + hue;
+			if (im.data[i] > 1) im.data[i] -= 1;
+			if (im.data[i] < 0) im.data[i] += 1;
+		}
+		hsv_to_rgb(im);
+	}
+	else
+	{
+		scale_image_channel(im, 0, val);
+	}
     constrain_image(im);
 }
 

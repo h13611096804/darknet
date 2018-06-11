@@ -1,8 +1,3 @@
-#ifdef _DEBUG
-#include <stdlib.h> 
-#include <crtdbg.h>  
-#endif
-
 #include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -358,6 +353,12 @@ int main(int argc, char **argv)
 #ifdef _DEBUG
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
+
+	int i;
+	for (i = 0; i < argc; ++i) {
+		if (!argv[i]) continue;
+		strip(argv[i]);
+	}
 
     //test_resize("data/bad.jpg");
     //test_box();

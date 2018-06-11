@@ -134,6 +134,7 @@ int resize_network(network *net, int w, int h);
 void set_batch_network(network *net, int b);
 int get_network_input_size(network net);
 float get_network_cost(network net);
+YOLODLL_API layer* get_network_layer(network* net, int i);
 YOLODLL_API detection *get_network_boxes(network *net, int w, int h, float thresh, float hier, int *map, int relative, int *num, int letter);
 YOLODLL_API detection *make_network_boxes(network *net, float thresh, int *num);
 YOLODLL_API void free_detections(detection *dets, int n);
@@ -147,7 +148,7 @@ YOLODLL_API int network_height(network *net);
 
 int get_network_nuisance(network net);
 int get_network_background(network net);
-void fuse_conv_batchnorm(network net);
+YOLODLL_API void fuse_conv_batchnorm(network net);
 
 #ifdef __cplusplus
 }

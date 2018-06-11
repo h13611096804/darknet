@@ -119,6 +119,10 @@ YOLODLL_API int Detector::get_net_height() const {
 	detector_gpu_t &detector_gpu = *static_cast<detector_gpu_t *>(detector_gpu_ptr.get());
 	return detector_gpu.net.h;
 }
+YOLODLL_API int Detector::get_net_color_depth() const {
+	detector_gpu_t &detector_gpu = *static_cast<detector_gpu_t *>(detector_gpu_ptr.get());
+	return detector_gpu.net.c;
+}
 
 
 YOLODLL_API std::vector<bbox_t> Detector::detect(std::string image_filename, float thresh, bool use_mean)
@@ -280,7 +284,6 @@ YOLODLL_API std::vector<bbox_t> Detector::tracking_id(std::vector<bbox_t> cur_bb
 	for (auto &prev_bbox_vec : prev_bbox_vec_deque) {
 		for (auto &i : prev_bbox_vec) {
 			int cur_index = -1;
-			float dir = 0;
 			for (size_t m = 0; m < cur_bbox_vec.size(); ++m) {
 				bbox_t const& k = cur_bbox_vec[m];
 				if (i.obj_id == k.obj_id) {
@@ -290,8 +293,6 @@ YOLODLL_API std::vector<bbox_t> Detector::tracking_id(std::vector<bbox_t> cur_bb
 					if (cur_dist < max_dist && (k.track_id == 0 || dist_vec[m] > cur_dist)) {
 						dist_vec[m] = cur_dist;
 						cur_index = m;
-						dir = atan2(center_y_diff, center_x_diff);
-						cur_bbox_vec[cur_index].direction = dir;
 					}
 				}
 			}
