@@ -72,17 +72,35 @@ void resize_route_layer(route_layer *l, network *net)
 
 void forward_route_layer(const route_layer l, network_state state)
 {
-    int i, j;
-    int offset = 0;
-    for(i = 0; i < l.n; ++i){
-        int index = l.input_layers[i];
-        float *input = state.net.layers[index].output;
-        int input_size = l.input_sizes[i];
-        for(j = 0; j < l.batch; ++j){
-            copy_cpu(input_size, input + j*input_size, 1, l.output + offset + j*l.outputs, 1);
-        }
-        offset += input_size;
-    }
+	int i, j;
+	int offset = 0;
+	for(i = 0; i < l.n; ++i){
+		int index = l.input_layers[i];
+		float *input = state.net.layers[index].output;
+		int input_size = l.input_sizes[i];
+		for(j = 0; j < l.batch; ++j){
+			copy_cpu(input_size, input + j*input_size, 1, l.output + offset + j*l.outputs, 1);
+		}
+		offset += input_size;
+	}
+}
+//speed
+void forward_route_layer_hanxu(const route_layer l, network_state state)
+{
+	int i, j, j_outputs;
+	int offset = 0;
+	for (i = 0; i < l.n; ++i) {
+		int index = l.input_layers[i];
+		float *input = state.net.layers[index].output;
+		int input_size = l.input_sizes[i];
+		int tmp = input_size * sizeof(float);
+		for (j = 0, j_outputs = 0; j < l.batch; ++j) {
+			memcpy(l.output + offset + j_outputs, input, tmp);
+			j_outputs += l.outputs;
+			input += input_size;
+		}
+		offset += input_size;
+	}
 }
 
 void backward_route_layer(const route_layer l, network_state state)
