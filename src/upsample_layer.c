@@ -69,9 +69,17 @@ void forward_upsample_layer(const layer l, network_state net)
 {
     fill_cpu(l.outputs*l.batch, 0, l.output, 1);
     if(l.reverse){
+		clock_t time_1;
+		clock_t time_2;
         upsample_cpu(l.output, l.out_w, l.out_h, l.c, l.batch, l.stride, 0, l.scale, net.input);
+
     }else{
+		//clock_t time_1 = clock();
         upsample_cpu(net.input, l.w, l.h, l.c, l.batch, l.stride, 1, l.scale, l.output);
+		//printf("%5lf   ", (double)(clock() - time_1) / CLOCKS_PER_SEC);
+		//clock_t time_2 = clock();
+		//upsample_cpu_hanxu(net.input, l.w, l.h, l.c, l.batch, l.stride, 1, l.scale, l.output);
+		//printf("%5lf\n", (double)(clock() - time_2) / CLOCKS_PER_SEC);
     }
 }
 

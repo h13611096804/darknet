@@ -37,6 +37,7 @@ void weighted_sum_cpu(float *a, float *b, float *s, int num, float *c);
 
 void softmax(float *input, int n, float temp, float *output, int stride);
 void upsample_cpu(float *in, int w, int h, int c, int batch, int stride, int forward, float scale, float *out);
+void upsample_cpu_hanxu(float *in, int w, int h, int c, int batch, int stride, int forward, float scale, float *out);
 
 #ifdef GPU
 #include "cuda.h"

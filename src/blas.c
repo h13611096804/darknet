@@ -307,3 +307,33 @@ void upsample_cpu(float *in, int w, int h, int c, int batch, int stride, int for
 		}
 	}
 }
+//speed 0.001-0.000
+void upsample_cpu_hanxu(float *in, int w, int h, int c, int batch, int stride, int forward, float scale, float *out)
+{
+	int i, j, k, b;
+	int tmp2 = w * h;
+	int tmp3 = tmp2 * c;
+	int w_ = w << 1;
+	int h_ = h << 1;
+	int in_index_1 = 0, out_index = 0, count_stride_h = 0, count_stride_w = 0, in_index_12 = 0;
+	for (b = 0; b < batch; ++b) {
+		for (k = 0; k < c; ++k) {
+			for (j = 0, in_index_12 = 0, count_stride_h = 0; j < h_; ++j) {
+				if (count_stride_h == stride) {
+					count_stride_h = 0;
+					in_index_12 += w;
+				}
+				for (i = 0; i < w_; ++i) {
+			
+					int in_index = in_index_1 + in_index_12 + (i >> 1);
+					if (forward) out[out_index] = scale*in[in_index];
+					else in[in_index] += scale*out[out_index];
+					out_index++;
+				}
+				count_stride_h++;
+			}
+			in_index_1 += tmp2;
+		}
+		in_index_1 += tmp3;
+	}
+}
