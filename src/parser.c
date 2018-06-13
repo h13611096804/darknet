@@ -161,11 +161,18 @@ convolutional_layer parse_convolutional(list *options, size_params params)
     batch=params.batch;
     if(!(h && w && c)) error("Layer before convolutional layer must output image.");
     int batch_normalize = option_find_int_quiet(options, "batch_normalize", 0);
+	CONV_TYPE type = NORMAL;
     int binary = option_find_int_quiet(options, "binary", 0);
-    int xnor = option_find_int_quiet(options, "xnor", params.net.xnor);
+    int xnor = option_find_int_quiet(options, "xnor", 0);
 	int depthwise = option_find_int_quiet(options, "depthwise", 0);
+	if (binary)
+		type = BINARY;
+	else if (xnor)
+		type = XNOR;
+	else if (depthwise)
+		type = DEPTHWISE;
 
-    convolutional_layer layer = make_convolutional_layer(batch,h,w,c,n,size,stride,padding,activation, batch_normalize, binary, xnor, depthwise, params.net.adam);
+    convolutional_layer layer = make_convolutional_layer(batch,h,w,c,n,size,stride,padding,activation, batch_normalize, type, params.net.adam);
     layer.flipped = option_find_int_quiet(options, "flipped", 0);
     layer.dot = option_find_float_quiet(options, "dot", 0);
     if(params.net.adam){
@@ -621,7 +628,6 @@ void parse_net_options(list *options, network *net)
     net->subdivisions = subdivs;
 
     net->adam = option_find_int_quiet(options, "adam", 0);
-	net->xnor = option_find_int_quiet(options, "xnor", 0);
     if(net->adam){
         net->B1 = option_find_float(options, "B1", .9);
         net->B2 = option_find_float(options, "B2", .999);

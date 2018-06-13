@@ -36,14 +36,22 @@ typedef enum {
     CRNN,
     BATCHNORM,
     NETWORK,
-    XNOR,
     REGION,
 	YOLO,
     REORG,
 	UPSAMPLE,
 	REORG_OLD,
     BLANK
+	//TODO
 } LAYER_TYPE;
+
+typedef enum {
+	NORMAL,
+	BINARY,
+	XNOR,
+	DEPTHWISE
+	//TODO
+} CONV_TYPE;
 
 typedef enum{
     SSE, MASKED, SMOOTH
@@ -92,9 +100,7 @@ struct layer{
     int sqrt;
     int flip;
     int index;
-    int binary;
-	int depthwise;
-    int xnor;
+	CONV_TYPE conv_type;
     int steps;
     int hidden;
     float dot;

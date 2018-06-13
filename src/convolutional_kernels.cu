@@ -111,12 +111,12 @@ half *cuda_make_f16_from_f32_array(float *src, size_t n)
 void forward_convolutional_layer_gpu(convolutional_layer l, network_state state)
 {
     fill_ongpu(l.outputs*l.batch, 0, l.output_gpu, 1);
-    if(l.binary){
+    if(l.conv_type == BINARY){
         binarize_weights_gpu(l.weights_gpu, l.n, l.c*l.size*l.size, l.binary_weights_gpu);
         swap_binary(&l);
     }
 
-   if(l.xnor && 32 <= l.c){
+   if(l.conv_type == XNOR){
    /*	if (l.batch_normalize)
 				forward_batchnorm_layer_gpu(l, state);*/
         binarize_weights_gpu(l.weights_gpu, l.n, l.c*l.size*l.size, l.binary_weights_gpu);
@@ -260,7 +260,7 @@ void forward_convolutional_layer_gpu(convolutional_layer l, network_state state)
 
     activate_array_ongpu(l.output_gpu, l.outputs*l.batch, l.activation);
     //if(l.dot > 0) dot_error_gpu(l);
-   if((l.binary || l.xnor) && 32 <= l.c) swap_binary(&l);
+   if(l.conv_type == XNOR || l.conv_type == BINARY) swap_binary(&l);
 	//cudaDeviceSynchronize();	// for correct profiling of performance
 }
 
@@ -279,7 +279,7 @@ void backward_convolutional_layer_gpu(convolutional_layer l, network_state state
 #endif // no CUDNN_HALF
     float *original_input = state.input;
 
-    if(l.xnor && 32 <= l.c) state.input = l.binary_input_gpu;
+    if(l.conv_type == XNOR) state.input = l.binary_input_gpu;
 #ifdef CUDNN
 	float one = 1;
 	float alpha = 1, beta = 0;
@@ -365,7 +365,7 @@ void backward_convolutional_layer_gpu(convolutional_layer l, network_state state
 	cuda_convert_f16_to_f32(l.weight_updates_gpu16, l.c*l.n*l.size*l.size, l.weight_updates_gpu);
 
 	if (state.delta) {
-		if ((l.binary || l.xnor) && 32 <= l.c) swap_binary(&l);
+		if (l.conv_type == BINARY || l.conv_type == XNOR ) swap_binary(&l);
 
 		// http://docs.nvidia.com/deeplearning/sdk/cudnn-developer-guide/index.html#cudnnConvolutionBackwardData
 		// calculate delta for the next layer
@@ -387,8 +387,8 @@ void backward_convolutional_layer_gpu(convolutional_layer l, network_state state
 
 		cuda_convert_f16_to_f32(input16, input16_size, state.delta);
 
-		if ((l.binary || l.xnor) && 32 <= l.c)  swap_binary(&l);
-		if ((l.binary || l.xnor) && 32 <= l.c)  gradient_array_ongpu(original_input, l.batch*l.c*l.h*l.w, HARDTAN, state.delta);
+		if (l.conv_type == BINARY || l.conv_type == XNOR)  swap_binary(&l);
+		if (l.conv_type == BINARY || l.conv_type == XNOR)  gradient_array_ongpu(original_input, l.batch*l.c*l.h*l.w, HARDTAN, state.delta);
 	}
 #else	// CUDNN_HALF
 
@@ -409,7 +409,7 @@ void backward_convolutional_layer_gpu(convolutional_layer l, network_state state
             l.weight_updates_gpu);
 
     if(state.delta){
-       if ((l.binary || l.xnor) && 32 <= l.c) swap_binary(&l);
+       if (l.conv_type == BINARY || l.conv_type == XNOR) swap_binary(&l);
 		// http://docs.nvidia.com/deeplearning/sdk/cudnn-developer-guide/index.html#cudnnConvolutionBackwardData
 		// calculate delta for the next layer
         cudnnConvolutionBackwardData(cudnn_handle(),
@@ -425,8 +425,8 @@ void backward_convolutional_layer_gpu(convolutional_layer l, network_state state
                 &one,
                 l.dsrcTensorDesc,
                 state.delta);
-      if ((l.binary || l.xnor) && 32 <= l.c)  swap_binary(&l);
-		if ((l.binary) && 32 <= l.c)  gradient_array_ongpu(original_input, l.batch*l.c*l.h*l.w, HARDTAN, state.delta);
+      if (l.conv_type == BINARY || l.conv_type == XNOR)  swap_binary(&l);
+		if (l.conv_type == BINARY)  gradient_array_ongpu(original_input, l.batch*l.c*l.h*l.w, HARDTAN, state.delta);
   }
 
 #endif	// CUDNN_HALF
@@ -446,7 +446,7 @@ void backward_convolutional_layer_gpu(convolutional_layer l, network_state state
         gemm_ongpu(0,1,m,n,k,1,a + i*m*k,k,b,k,1,c,n);
 
         if(state.delta){
-            if ((l.binary || l.xnor) && 32 <= l.c) swap_binary(&l);
+            if (l.conv_type == BINARY || l.conv_type == XNOR) swap_binary(&l);
             float * a = l.weights_gpu;
             float * b = l.delta_gpu;
             float * c = state.workspace;
@@ -454,10 +454,10 @@ void backward_convolutional_layer_gpu(convolutional_layer l, network_state state
             gemm_ongpu(1,0,n,k,m,1,a,n,b + i*k*m,k,0,c,k);
 
             col2im_ongpu(state.workspace, l.c,  l.h,  l.w,  l.size,  l.stride, l.pad, state.delta + i*l.c*l.h*l.w);
-            if ((l.binary || l.xnor) && 32 <= l.c)
+            if (l.conv_type == BINARY || l.conv_type == XNOR)
                 swap_binary(&l);
             }
-           if ((l.binary ) && 32 <= l.c) gradient_array_ongpu(original_input + i*l.c*l.h*l.w, l.c*l.h*l.w, HARDTAN, state.delta + i*l.c*l.h*l.w);
+           if (l.conv_type == BINARY) gradient_array_ongpu(original_input + i*l.c*l.h*l.w, l.c*l.h*l.w, HARDTAN, state.delta + i*l.c*l.h*l.w);
         }
     }
 #endif
