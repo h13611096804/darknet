@@ -1217,7 +1217,7 @@ void run_detector(int argc, char **argv)
 	// and for recall mode (extended output table-like format with results for best_class fit)
 	int ext_output = find_arg(argc, argv, "-ext_output");
 	int save_labels = find_arg(argc, argv, "-save_labels");
-    if(argc < 4){
+	if(argc < 4){
         fprintf(stderr, "usage: %s %s [train/test/valid] [cfg] [weights (optional)]\n", argv[0], argv[1]);
         return;
     }
@@ -1247,12 +1247,16 @@ void run_detector(int argc, char **argv)
     int clear = find_arg(argc, argv, "-clear");
 
     char *datacfg = argv[3];
+	//char *datacfg = "E:/darknet/build/darknet/x64/data/coco.data";
     char *cfg = argv[4];
+	//char *cfg = "E:/darknet/build/darknet/x64/yolov3.cfg";
     char *weights = (argc > 5) ? argv[5] : 0;
+	//char *weights = "E:/darknet/build/darknet/x64/yolov3.weights";
 	if(weights)
 		if(strlen(weights) > 0)
 			if (weights[strlen(weights) - 1] == 0x0d) weights[strlen(weights) - 1] = 0;
     char *filename = (argc > 6) ? argv[6]: 0;
+	//char *filename = "E:/darknet/build/darknet/x64/test.mp4";
     if(0==strcmp(argv[2], "test")) test_detector(datacfg, cfg, weights, filename, thresh, hier_thresh, dont_show, ext_output, save_labels);
     else if(0==strcmp(argv[2], "train")) train_detector(datacfg, cfg, weights, gpus, ngpus, clear, dont_show);
     else if(0==strcmp(argv[2], "valid")) validate_detector(datacfg, cfg, weights, outfile);

@@ -909,9 +909,9 @@ void save_convolutional_weights_binary(layer l, FILE *fp)
 		//fwrite(l.weights, sizeof(float), l.c * l.n * l.size * l.size, fp);
 	}
 	else {
-		binarize_xnor_weights_save(l.weights, l.n, l.c, l.size, l.binary_weights_xnor, l.alpha_xnor);
+		binarize_xnor_weights_save(l.weights, l.n, l.c, l.size, l.binary_weights_xnor, l.a_scale);
 		fwrite(l.binary_weights_xnor, sizeof(BINARY_WORD), num_1, fp);
-		fwrite(l.alpha_xnor, sizeof(float), l.n, fp);
+		fwrite(l.a_scale, sizeof(float), l.n, fp);
 	/*		for (i = 0; i < l.n; ++i) {
 				l.alpha_xnor[i] = l.binary_weights[i*l.size];
 				if (l.alpha_xnor[i] < 0) l.alpha_xnor[i] = -l.alpha_xnor[i];
@@ -1119,7 +1119,7 @@ void load_convolutional_weights_binary(layer l, FILE *fp)
 	else {
 
 		fread(l.binary_weights_xnor, sizeof(BINARY_WORD), (l.n * l.size * l.size * l.c) >> 5, fp);
-		fread(l.alpha_xnor, sizeof(float), l.n, fp);
+		fread(l.a_scale, sizeof(float), l.n, fp);
 			/*int size = l.c*l.size*l.size;
 			int i, j, k;
 			for (i = 0; i < l.n; ++i) {

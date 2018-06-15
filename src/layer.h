@@ -183,7 +183,8 @@ struct layer{
 	//hanxu
 	BINARY_WORD *binary_input_xnor;
 	BINARY_WORD *binary_weights_xnor;
-	float *alpha_xnor;
+	float *a_scale;
+	float *b_scale;
 
 
     float *binary_weights;
