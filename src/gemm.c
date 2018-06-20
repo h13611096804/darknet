@@ -148,12 +148,12 @@ void gemm_nn(int M, int N, int K, float ALPHA,
 	int i, j, k, tmp;
 	if (is_fma_avx() == 1) {	// AVX
 		for (i = 0; i < M; ++i) {
-			for (k = 0; k < K; ++k) {
+			for (k = 0, tmp = 0; k < K; ++k) {
 				float A_PART = ALPHA*A[i*lda + k];
 				__m256 a256, b256, c256, result256;	// AVX
 				a256 = _mm256_set1_ps(A_PART);
 				for (j = 0; j < N - 8; j += 8) {
-					b256 = _mm256_loadu_ps(&B[k*ldb + j]);
+					b256 = _mm256_loadu_ps(&B[tmp + j]);
 					c256 = _mm256_loadu_ps(&C[i*ldc + j]);
 					// FMA - Intel Haswell (2013), AMD Piledriver (2012)
 					//result256 = _mm256_fmadd_ps(a256, b256, c256);
@@ -163,19 +163,20 @@ void gemm_nn(int M, int N, int K, float ALPHA,
 				}
 				int prev_end = (N % 8 == 0) ? (N - 8) : (N / 8) * 8;
 				for (j = prev_end; j < N; ++j)
-					C[i*ldc + j] += A_PART*B[k*ldb + j];
-				tmp += ldc;
+					C[i*ldc + j] += A_PART*B[tmp + j];
+				tmp += ldb;
 			}
 			
 		}
 	}
 	else {
 		for (i = 0; i < M; ++i) {
-			for (k = 0; k < K; ++k) {
+			for (k = 0, tmp = 0; k < K; ++k) {
 				register float A_PART = ALPHA*A[i*lda + k];
 				for (j = 0; j < N; ++j) {
-					C[i*ldc + j] += A_PART*B[k*ldb + j];
+					C[i*ldc + j] += A_PART*B[tmp + j];
 				}
+				tmp += ldb;
 				/* // SSE
 				__m128 a128, b128, c128, result128;	// SSE
 				a128 = _mm_set1_ps(A_PART);
@@ -275,11 +276,13 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
 {
     //printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
     int i, j;
-    for(i = 0; i < M; ++i){
-        for(j = 0; j < N; ++j){
-            C[i*ldc + j] *= BETA;
-        }
-    }
+	if (BETA != 1) {
+		for (i = 0; i < M; ++i) {
+			for (j = 0; j < N; ++j) {
+				C[i*ldc + j] *= BETA;
+			}
+		}
+	}
 
 	int t;
 	#pragma omp parallel for
