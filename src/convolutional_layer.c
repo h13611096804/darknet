@@ -21,7 +21,19 @@
 //#define AI2 0
 //void forward_xnor_layer(layer l, network_state state);
 //#endif
+#ifdef _WIN64
+#include <intrin.h>
+#include <ammintrin.h>
+#include <immintrin.h>
+#include <smmintrin.h>
 
+#else	// Linux GCC/Clang
+#include <x86intrin.h>
+#include <ammintrin.h>
+#include <immintrin.h>
+#include <smmintrin.h>
+#include <cpuid.h>
+#endif
 void swap_binary(convolutional_layer *l)
 {
     float *swap = l->weights;
@@ -735,8 +747,8 @@ void forward_binary_conv_layer(convolutional_layer l, network_state state)
 void forward_original_conv_layer(convolutional_layer l, network_state state)
 {
 
-	//float*c_test = calloc(l.batch*l.outputs, sizeof(float));
-	//fill_cpu(l.outputs*l.batch, 0, c_test, 1);
+	float*c_test = calloc(l.batch*l.outputs, sizeof(float));
+	fill_cpu(l.outputs*l.batch, 0, c_test, 1);
 	int out_h = convolutional_out_height(l);
 	int out_w = convolutional_out_width(l);
 	int i;
@@ -750,56 +762,81 @@ void forward_original_conv_layer(convolutional_layer l, network_state state)
 	float *b = state.workspace;
 	float *c = l.output;
 
-	//float *c_t = c_test;
-
+	float *c_t = c_test;
+	clock_t time_1;
+	clock_t time_2;
 	for (i = 0; i < l.batch; ++i) {
+		
 		im2col_cpu(state.input, l.c, l.h, l.w,
 			l.size, l.stride, l.pad, b);
-		gemm(0, 0, m, n, k, 1, a, k, b, n, 1, c, n);
-
-		//int t;
-		//#pragma omp parallel for
-		//for (t = 0; t < m; ++t) {
-		//	float* A = a + t * k;
-		//	float* C = c_t + t * n;
-		//	// float* C = c + t * n;
-		//	int i, j;
-		//	for (i = 0; i < k; ++i) {
-		//		register float A_PART = A[i];
-		//		for (j = 0; j < n; ++j) {
-		//			C[j] += A_PART*b[i*n + j];
-		//		}
-		//	}
-		//}
-		//for (int x = 0; x < n*m; x++) {
-		//	if (c_t[x] != c[x])
-		//		printf("error:%5lf %5lf\n", c_t[x], c[x]);
-		//}
-
-		//c_t += n*m;
-		c += n*m;
-		state.input += l.c*l.h*l.w;
-	}
-	
-	for (i = 0; i < l.batch; ++i) {
-		im2col_cpu(state.input, l.c, l.h, l.w,
-			l.size, l.stride, l.pad, b);
+		time_1 = clock();
+		//gemm(0, 0, m, n, k, 1, a, k, b, n, 1, c, n);
 		int t;
-#pragma omp parallel for
+		#pragma omp parallel for
 		for (t = 0; t < m; ++t) {
 			float* A = a + t * k;
 			float* C = c + t * n;
-			int i, j;
+			int j;
 			for (i = 0; i < k; ++i) {
-				register float A_PART = A[i];
-				for (j = 0; j < n; ++j) {
-					C[j] += A_PART*b[i*n + j];
+				float A_PART = A[i];
+				__m256 a256, b256, c256, result256;	// AVX
+				a256 = _mm256_set1_ps(A_PART);
+				for (j = 0; j < n - 8; j += 8) {
+					b256 = _mm256_loadu_ps(&b[i*n + j]);
+					c256 = _mm256_loadu_ps(&C[j]);
+					result256 = _mm256_mul_ps(a256, b256);
+					result256 = _mm256_add_ps(result256, c256);
+					_mm256_storeu_ps(&C[j], result256);
 				}
+				int prev_end = (n % 8 == 0) ? (n - 8) : (n / 8) * 8;
+				for (j = prev_end; j < n; ++j)
+					C[j] += A_PART*b[i*n + j];
 			}
 		}
+		printf("%lf", sec(clock() - time_1));
+		time_2 = clock();
+		#pragma omp parallel for
+		for (t = 0; t < m; ++t) {
+			float* A = a + t * k;
+			float* C = c_t + t * n;
+			 //float* C = c + t * n;
+			int i, j, i_1;
+			for (i = 0, i_1 = 0; i < k; ++i) {
+				register float A_PART = A[i];
+				for (j = 0; j < n; ++j) {
+					C[j] += A_PART*b[i_1 + j];
+				}
+				i_1 += n;
+			}
+		}
+		printf(" %lf\n", sec(clock() - time_2));
+	/*	for (int x = 0; x < n*m; x++) {
+			if (c_t[x] != c[x])
+				printf("error:%5lf %5lf\n", c_t[x], c[x]);
+		}*/
+
 		c += n*m;
 		state.input += l.c*l.h*l.w;
 	}
+//	for (i = 0; i < l.batch; ++i) {
+//		im2col_cpu(state.input, l.c, l.h, l.w,
+//			l.size, l.stride, l.pad, b);
+//		int t;
+//#pragma omp parallel for
+//		for (t = 0; t < m; ++t) {
+//			float* A = a + t * k;
+//			float* C = c + t * n;
+//			int i, j;
+//			for (i = 0; i < k; ++i) {
+//				register float A_PART = A[i];
+//				for (j = 0; j < n; ++j) {
+//					C[j] += A_PART*b[i*n + j];
+//				}
+//			}
+//		}
+//		c += n*m;
+//		state.input += l.c*l.h*l.w;
+//	}
 	
 	if (l.batch_normalize) {
 		forward_batchnorm_layer(l, state);

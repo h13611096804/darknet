@@ -145,7 +145,7 @@ void gemm_nn(int M, int N, int K, float ALPHA,
 	float *B, int ldb,
 	float *C, int ldc)
 {
-	int i, j, k;
+	int i, j, k, tmp;
 	if (is_fma_avx() == 1) {	// AVX
 		for (i = 0; i < M; ++i) {
 			for (k = 0; k < K; ++k) {
@@ -161,11 +161,12 @@ void gemm_nn(int M, int N, int K, float ALPHA,
 					result256 = _mm256_add_ps(result256, c256);
 					_mm256_storeu_ps(&C[i*ldc + j], result256);
 				}
-
 				int prev_end = (N % 8 == 0) ? (N - 8) : (N / 8) * 8;
 				for (j = prev_end; j < N; ++j)
 					C[i*ldc + j] += A_PART*B[k*ldb + j];
+				tmp += ldc;
 			}
+			
 		}
 	}
 	else {
